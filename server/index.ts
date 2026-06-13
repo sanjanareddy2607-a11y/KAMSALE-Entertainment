@@ -43,26 +43,15 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================================
-// SMTP CONFIGURATION WITH RENDER IPv4 COMPATIBILITY
+// SMTP CONFIGURATION - LAZY INITIALIZATION (no startup blocking)
 // ============================================================================
 
-let transporter: nodemailer.Transporter | null = null;
-let smtpVerified = false;
-
-async function initializeEmailTransporter() {
+function createEmailTransporter(): nodemailer.Transporter | null {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn("⚠️  SMTP credentials not configured — email notifications disabled.");
-    console.warn("   Set SMTP_HOST, SMTP_USER, SMTP_PASS in environment variables.");
-    return;
+    return null;
   }
 
-  console.log(`📧 Initializing SMTP transporter...`);
-  console.log(`   Host: ${process.env.SMTP_HOST}`);
-  console.log(`   Port: ${process.env.SMTP_PORT || 587}`);
-  console.log(`   Secure: ${process.env.SMTP_SECURE === "true"}`);
-  console.log(`   IPv4 Mode: ENABLED (family: 4)`);
-
-  transporter = nodemailer.createTransport({
+  return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
     secure: process.env.SMTP_SECURE === "true",
@@ -72,9 +61,10 @@ async function initializeEmailTransporter() {
     },
     // RENDER COMPATIBILITY: Force IPv4 only
     family: 4,
-    // Connection settings
-    connectionTimeout: 15000, // 15 seconds for connection
-    socketTimeout: 15000, // 15 seconds for socket
+    // Connection timeout settings for Render
+    connectionTimeout: 10000, // 10 seconds for connection
+    greetingTimeout: 10000, // 10 seconds for SMTP greeting
+    socketTimeout: 15000, // 15 seconds for socket operations
     // Connection pool
     pool: {
       maxConnections: 3,
@@ -82,37 +72,11 @@ async function initializeEmailTransporter() {
       rateDelta: 1000,
       rateLimit: 5,
     },
-    // Disable TLS for debugging if needed (usually keep enabled)
+    // TLS settings
     tls: {
       rejectUnauthorized: true,
     },
   });
-
-  // Verify SMTP connection before starting server
-  try {
-    const verified = await transporter.verify();
-    if (verified) {
-      console.log("✅ SMTP connection verified successfully!");
-      console.log(`✅ Email will be sent to: ${RECIPIENT_EMAIL}`);
-      smtpVerified = true;
-    }
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    const errorCode = (err as any)?.code || "UNKNOWN";
-    console.error("❌ SMTP verification FAILED!");
-    console.error(`   Code: ${errorCode}`);
-    console.error(`   Error: ${errorMsg}`);
-    console.error(`   Host: ${process.env.SMTP_HOST}`);
-    console.error(`   Port: ${process.env.SMTP_PORT || 587}`);
-    console.error("");
-    console.error("   Common fixes:");
-    console.error("   1. Ensure SMTP_HOST, SMTP_USER, SMTP_PASS are correct");
-    console.error("   2. For Gmail: Use App Password (not regular password)");
-    console.error("   3. Verify port 587 is reachable (SMTP_PORT=587)");
-    console.error("   4. Enable SMTP_SECURE=false for port 587");
-    console.error("");
-    smtpVerified = false;
-  }
 }
 
 function buildEmailBody(data: Record<string, string>) {
@@ -182,12 +146,14 @@ function buildEmailBody(data: Record<string, string>) {
   return text;
 }
 
-// Non-blocking async email sender
+// Non-blocking async email sender with lazy transporter creation
 async function sendEmailAsync(
   id: string,
   data: Record<string, string>,
   attachments: { filename: string; path: string }[]
 ) {
+  const transporter = createEmailTransporter();
+  
   if (!transporter) {
     console.warn(`⚠️  [Reg #${id}] SMTP not configured — skipping email.`);
     return;
@@ -205,12 +171,18 @@ async function sendEmailAsync(
     });
     
     console.log(`✅ [Reg #${id}] Email sent successfully! (Message ID: ${info.messageId})`);
+    transporter.close();
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     const errorCode = (err as any)?.code || "UNKNOWN";
     console.error(`❌ [Reg #${id}] Email sending failed (registration still saved)`);
     console.error(`   Code: ${errorCode}`);
     console.error(`   Error: ${errorMsg}`);
+    try {
+      transporter.close();
+    } catch (closeErr) {
+      // Ignore close errors
+    }
   }
 }
 
@@ -328,24 +300,12 @@ app.use((req, res) => {
 // START SERVER
 // ============================================================================
 
-async function startServer() {
-  // Initialize SMTP first
-  await initializeEmailTransporter();
-
-  // Then start the server
-  app.listen(PORT, () => {
-    console.log("");
-    console.log("════════════════════════════════════════════════════════════");
-    console.log(`🚀 API server running on http://localhost:${PORT}`);
-    console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
-    if (smtpVerified) {
-      console.log(`📧 Email notifications: ENABLED`);
-    } else {
-      console.log(`📧 Email notifications: DISABLED (SMTP verification failed)`);
-    }
-    console.log("════════════════════════════════════════════════════════════");
-    console.log("");
-  });
-}
-
-startServer();
+app.listen(PORT, () => {
+  console.log("");
+  console.log("════════════════════════════════════════════════════════════");
+  console.log(`🚀 API server running on http://localhost:${PORT}`);
+  console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
+  console.log(`📧 Email: Lazy initialization (created on first registration)`);
+  console.log("════════════════════════════════════════════════════════════");
+  console.log("");
+});
