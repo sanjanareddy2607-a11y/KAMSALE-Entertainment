@@ -4,6 +4,7 @@ import multer from "multer";
 import nodemailer from "nodemailer";
 import path from "path";
 import fs from "fs";
+import dns from "dns";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { initDatabase, insertRegistration, searchRegistrations } from "./db.ts";
@@ -43,8 +44,22 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================================
-// SMTP CONFIGURATION - LAZY INITIALIZATION (no startup blocking)
+// SMTP CONFIGURATION - LAZY INITIALIZATION WITH FORCED IPv4
 // ============================================================================
+
+// Custom DNS lookup function that forces IPv4 only
+const ipv4OnlyLookup = (hostname: string, options: any, callback: any) => {
+  // Force family 4 (IPv4)
+  dns.lookup(hostname, { family: 4 }, (err, address, family) => {
+    if (err) {
+      console.error(`❌ DNS lookup failed for ${hostname}: ${err.message}`);
+      callback(err);
+    } else {
+      console.log(`✅ DNS resolved ${hostname} to ${address} (IPv4)`);
+      callback(null, address, family);
+    }
+  });
+};
 
 function createEmailTransporter(): nodemailer.Transporter | null {
   if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
@@ -59,8 +74,9 @@ function createEmailTransporter(): nodemailer.Transporter | null {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    // RENDER COMPATIBILITY: Force IPv4 only
-    family: 4,
+    // RENDER COMPATIBILITY: Force IPv4 only at multiple levels
+    family: 4, // Nodemailer family option
+    lookup: ipv4OnlyLookup, // Custom DNS lookup function
     // Connection timeout settings for Render
     connectionTimeout: 10000, // 10 seconds for connection
     greetingTimeout: 10000, // 10 seconds for SMTP greeting
@@ -178,6 +194,7 @@ async function sendEmailAsync(
     console.error(`❌ [Reg #${id}] Email sending failed (registration still saved)`);
     console.error(`   Code: ${errorCode}`);
     console.error(`   Error: ${errorMsg}`);
+    console.error(`   Note: Registration #${id} is safely stored in SQLite`);
     try {
       transporter.close();
     } catch (closeErr) {
@@ -305,7 +322,7 @@ app.listen(PORT, () => {
   console.log("════════════════════════════════════════════════════════════");
   console.log(`🚀 API server running on http://localhost:${PORT}`);
   console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`📧 Email: Lazy initialization (created on first registration)`);
+  console.log(`📧 Email: Lazy initialization with forced IPv4 DNS`);
   console.log("════════════════════════════════════════════════════════════");
   console.log("");
 });
