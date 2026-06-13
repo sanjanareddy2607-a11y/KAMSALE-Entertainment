@@ -16,6 +16,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
+const DIST_DIR = path.join(__dirname, "..", "dist");
 const RECIPIENT_EMAIL =
   process.env.RECIPIENT_EMAIL || "vinoothanagoldensingers@gmail.com";
 
@@ -136,6 +137,10 @@ async function sendEmail(
   });
 }
 
+// ============================================================================
+// API ROUTES (defined BEFORE static middleware to take priority)
+// ============================================================================
+
 app.post(
   "/api/registrations",
   upload.fields([
@@ -208,6 +213,39 @@ app.get("/api/registrations/search", (req, res) => {
   }
 });
 
+// ============================================================================
+// STATIC FILES & SPA FALLBACK (for Vite build in production)
+// ============================================================================
+
+// Serve static files from the dist folder
+if (fs.existsSync(DIST_DIR)) {
+  app.use(express.static(DIST_DIR, { maxAge: "1d" }));
+  console.log(`📁 Serving static files from: ${DIST_DIR}`);
+} else {
+  console.warn(`⚠️  dist folder not found at ${DIST_DIR} — static files will not be served`);
+}
+
+// SPA Fallback: Route all unknown requests to dist/index.html
+// Uses regex pattern to match any route that isn't an API route
+app.use((req, res) => {
+  const indexPath = path.join(DIST_DIR, "index.html");
+  
+  if (fs.existsSync(indexPath)) {
+    res.sendFile(indexPath);
+  } else {
+    // Fallback if dist/index.html doesn't exist (development mode)
+    res.status(404).json({ 
+      error: "Not found",
+      message: "dist/index.html not found. Make sure to run 'npm run build' before deploying." 
+    });
+  }
+});
+
+// ============================================================================
+// START SERVER
+// ============================================================================
+
 app.listen(PORT, () => {
-  console.log(`API server running on http://localhost:${PORT}`);
+  console.log(`🚀 API server running on http://localhost:${PORT}`);
+  console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
 });
