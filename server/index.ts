@@ -164,6 +164,7 @@ app.post(
         portfolioFile: files.portfolioFile?.[0]?.filename ?? null,
       };
 
+      // ✅ SAVE TO DATABASE FIRST (this can fail and should)
       const id = insertRegistration(body, filePaths);
 
       const emailData = {
@@ -180,8 +181,18 @@ app.post(
           path: f.path,
         }));
 
-      await sendEmail(emailData, attachments);
+      // ✅ TRY TO SEND EMAIL (but don't fail registration if it fails)
+      try {
+        await sendEmail(emailData, attachments);
+      } catch (emailErr) {
+        console.error(
+          `⚠️  Email sending failed for registration #${id} (but registration was saved):`,
+          emailErr
+        );
+        // Don't throw - registration is already saved to database
+      }
 
+      // ✅ ALWAYS RETURN SUCCESS if database save succeeded
       res.json({ success: true, id });
     } catch (err) {
       console.error("Registration error:", err);
