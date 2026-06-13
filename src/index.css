@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Cormorant Garamond", Georgia, serif;
+  --font-body: "Outfit", system-ui, sans-serif;
+
+  --color-gold-50: #fdf8ef;
+  --color-gold-100: #f9edd6;
+  --color-gold-200: #f2d9a8;
+  --color-gold-300: #e8c078;
+  --color-gold-400: #d4a04a;
+  --color-gold-500: #b8862e;
+  --color-gold-600: #9a6b24;
+  --color-gold-700: #7a5420;
+
+  --color-cream: #faf9f7;
+  --color-warm-gray: #6b6560;
+  --color-charcoal: #1a1816;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    font-family: var(--font-body);
+    background-color: #ffffff;
+    color: var(--color-charcoal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--color-gold-200);
+    color: var(--color-charcoal);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+
+  .text-gradient-gold {
+    background: linear-gradient(135deg, var(--color-gold-600), var(--color-gold-400));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass-nav {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(184, 134, 46, 0.12);
+  }
+
+  .premium-shadow {
+    box-shadow:
+      0 4px 24px rgba(26, 24, 22, 0.06),
+      0 1px 3px rgba(26, 24, 22, 0.04);
+  }
+
+  .premium-shadow-lg {
+    box-shadow:
+      0 12px 48px rgba(26, 24, 22, 0.08),
+      0 4px 12px rgba(184, 134, 46, 0.06);
+  }
+
+  .glow-gold {
+    box-shadow:
+      0 0 40px rgba(184, 134, 46, 0.15),
+      0 8px 32px rgba(26, 24, 22, 0.08);
+  }
+
+  .card-border {
+    border: 1px solid rgba(184, 134, 46, 0.18);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  .focus\:not-sr-only:focus {
+    position: static;
+    width: auto;
+    height: auto;
+    padding: inherit;
+    margin: inherit;
+    overflow: visible;
+    clip: auto;
+    white-space: normal;
+  }
+}

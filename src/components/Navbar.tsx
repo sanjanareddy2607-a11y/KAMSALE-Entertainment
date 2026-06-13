@@ -1,0 +1,175 @@
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { motion, AnimatePresence } from "framer-motion";
+import { Menu, X } from "lucide-react";
+import { NAV_ITEMS, SITE } from "../data/content";
+import { useScrollSpy } from "../hooks/useScrollSpy";
+
+export function Navbar() {
+  const [scrolled, setScrolled] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isHome = location.pathname === "/";
+  const activeId = useScrollSpy(NAV_ITEMS.map((item) => item.id));
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [location.pathname]);
+
+  const scrollTo = (id: string) => {
+    setMobileOpen(false);
+    if (!isHome) {
+      navigate(`/#${id}`);
+      return;
+    }
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
+  useEffect(() => {
+    if (isHome && location.hash) {
+      const id = location.hash.replace("#", "");
+      const el = document.getElementById(id);
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 100);
+      }
+    }
+  }, [isHome, location.hash]);
+
+  return (
+    <header
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
+        scrolled || !isHome ? "glass-nav premium-shadow" : "bg-transparent"
+      }`}
+    >
+      <nav
+        className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8"
+        aria-label="Main navigation"
+      >
+        <Link
+          to="/"
+          className="flex items-center gap-3 group"
+          aria-label="Go to home"
+        >
+          <img
+            src="/kamsale_logo_nobg_hd.png"
+            alt="Kamsale Entertainment logo"
+            className="h-10 w-10 md:h-12 md:w-12 object-contain transition-transform duration-300 group-hover:scale-105"
+            width={48}
+            height={48}
+          />
+          <div className="text-left">
+            <span className="font-display text-lg md:text-xl font-semibold text-charcoal leading-tight block">
+              {SITE.name}
+            </span>
+            <span className="text-[9px] md:text-[10px] text-gold-600 tracking-[0.18em] uppercase hidden sm:block font-medium">
+              {SITE.tagline}
+            </span>
+          </div>
+        </Link>
+
+        <ul className="hidden lg:flex items-center gap-0.5 xl:gap-1">
+          {NAV_ITEMS.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button"
+                onClick={() => scrollTo(item.id)}
+                className={`relative px-3 xl:px-4 py-2 text-sm font-medium tracking-wide transition-colors duration-300 rounded-full whitespace-nowrap ${
+                  isHome && activeId === item.id
+                    ? "text-gold-600"
+                    : scrolled || !isHome
+                      ? "text-warm-gray hover:text-charcoal"
+                      : "text-white/80 hover:text-white"
+                }`}
+              >
+                {item.label}
+                {isHome && activeId === item.id && (
+                  <motion.span
+                    layoutId="nav-indicator"
+                    className="absolute inset-0 rounded-full bg-gold-50 border border-gold-200/60 -z-10"
+                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                  />
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <button
+          type="button"
+          onClick={() => scrollTo("contact")}
+          className={`hidden lg:inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500 ${
+            scrolled || !isHome
+              ? "bg-charcoal text-white hover:bg-gold-600 hover:shadow-lg hover:shadow-gold-400/20"
+              : "bg-white text-charcoal hover:bg-gold-100 hover:shadow-xl"
+          }`}
+        >
+          Book Event
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileOpen(!mobileOpen)}
+          className={`lg:hidden p-2 rounded-lg transition-colors ${
+            scrolled || !isHome
+              ? "text-charcoal hover:bg-gold-50"
+              : "text-white hover:bg-white/10"
+          }`}
+          aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
+        >
+          {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+        </button>
+      </nav>
+
+      <AnimatePresence>
+        {mobileOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="lg:hidden glass-nav border-t border-gold-100/50 overflow-hidden"
+          >
+            <ul className="flex flex-col px-5 py-4 gap-1">
+              {NAV_ITEMS.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => scrollTo(item.id)}
+                    className={`w-full text-left px-4 py-3 rounded-xl text-base font-medium transition-colors ${
+                      isHome && activeId === item.id
+                        ? "bg-gold-50 text-gold-700"
+                        : "text-charcoal hover:bg-cream"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                </li>
+              ))}
+              <li className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => scrollTo("contact")}
+                  className="w-full rounded-xl bg-charcoal px-4 py-3 text-white font-medium hover:bg-gold-600 transition-colors"
+                >
+                  Book Event
+                </button>
+              </li>
+            </ul>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </header>
+  );
+}
