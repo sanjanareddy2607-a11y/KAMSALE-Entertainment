@@ -5,6 +5,7 @@ import nodemailer from "nodemailer";
 import path from "path";
 import fs from "fs";
 import dns from "dns";
+import { promises as dnsPromises } from "dns";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { initDatabase, insertRegistration, searchRegistrations } from "./db.ts";
@@ -44,53 +45,70 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================================================
-// SMTP CONFIGURATION - LAZY INITIALIZATION WITH FORCED IPv4
+// SMTP CONFIGURATION - PRE-RESOLVED IPv4 ADDRESS
 // ============================================================================
 
-// Custom DNS lookup function that forces IPv4 only
-const ipv4OnlyLookup = (hostname: string, options: any, callback: any) => {
-  // Force family 4 (IPv4)
-  dns.lookup(hostname, { family: 4 }, (err, address, family) => {
-    if (err) {
-      console.error(`❌ DNS lookup failed for ${hostname}: ${err.message}`);
-      callback(err);
-    } else {
-      console.log(`✅ DNS resolved ${hostname} to ${address} (IPv4)`);
-      callback(null, address, family);
-    }
-  });
-};
+// Global DNS settings - force IPv4
+dns.setDefaultResultOrder('ipv4first');
 
-function createEmailTransporter(): nodemailer.Transporter | null {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+let resolvedSmtpHost: string | null = null;
+
+// Pre-resolve SMTP host to IPv4 address to bypass DNS during connection
+async function resolveSmtpHostToIPv4(): Promise<string | null> {
+  if (!process.env.SMTP_HOST) {
+    return null;
+  }
+
+  try {
+    console.log(`🔍 Pre-resolving SMTP host ${process.env.SMTP_HOST} to IPv4...`);
+    const addresses = await dnsPromises.resolve4(process.env.SMTP_HOST);
+    
+    if (addresses.length === 0) {
+      console.error(`❌ No IPv4 addresses found for ${process.env.SMTP_HOST}`);
+      return null;
+    }
+
+    const ipv4Address = addresses[0];
+    console.log(`✅ Resolved ${process.env.SMTP_HOST} to IPv4: ${ipv4Address}`);
+    return ipv4Address;
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error(`❌ Failed to resolve SMTP host: ${errorMsg}`);
+    // Fallback to hostname if resolution fails
+    return process.env.SMTP_HOST;
+  }
+}
+
+function createEmailTransporter(smtpHost: string): nodemailer.Transporter | null {
+  if (!smtpHost || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
     return null;
   }
 
   return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
+    host: smtpHost, // Use pre-resolved IPv4 address
     port: Number(process.env.SMTP_PORT || 587),
     secure: process.env.SMTP_SECURE === "true",
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
     },
-    // RENDER COMPATIBILITY: Force IPv4 only at multiple levels
-    family: 4, // Nodemailer family option
-    lookup: ipv4OnlyLookup, // Custom DNS lookup function
-    // Connection timeout settings for Render
-    connectionTimeout: 10000, // 10 seconds for connection
-    greetingTimeout: 10000, // 10 seconds for SMTP greeting
-    socketTimeout: 15000, // 15 seconds for socket operations
+    // Force IPv4 at every level
+    family: 4,
+    // Connection timeout settings
+    connectionTimeout: 10000, // 10 seconds
+    greetingTimeout: 10000, // 10 seconds
+    socketTimeout: 15000, // 15 seconds
     // Connection pool
     pool: {
-      maxConnections: 3,
-      maxMessages: 100,
-      rateDelta: 1000,
-      rateLimit: 5,
+      maxConnections: 2,
+      maxMessages: 50,
+      rateDelta: 2000,
+      rateLimit: 3,
     },
     // TLS settings
     tls: {
       rejectUnauthorized: true,
+      minVersion: 'TLSv1.2',
     },
   });
 }
@@ -162,16 +180,21 @@ function buildEmailBody(data: Record<string, string>) {
   return text;
 }
 
-// Non-blocking async email sender with lazy transporter creation
+// Non-blocking async email sender with pre-resolved SMTP host
 async function sendEmailAsync(
   id: string,
   data: Record<string, string>,
   attachments: { filename: string; path: string }[]
 ) {
-  const transporter = createEmailTransporter();
+  if (!resolvedSmtpHost) {
+    console.warn(`⚠️  [Reg #${id}] SMTP host not resolved — skipping email.`);
+    return;
+  }
+
+  const transporter = createEmailTransporter(resolvedSmtpHost);
   
   if (!transporter) {
-    console.warn(`⚠️  [Reg #${id}] SMTP not configured — skipping email.`);
+    console.warn(`⚠️  [Reg #${id}] Failed to create SMTP transporter — skipping email.`);
     return;
   }
 
@@ -317,12 +340,25 @@ app.use((req, res) => {
 // START SERVER
 // ============================================================================
 
-app.listen(PORT, () => {
-  console.log("");
-  console.log("════════════════════════════════════════════════════════════");
-  console.log(`🚀 API server running on http://localhost:${PORT}`);
-  console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`📧 Email: Lazy initialization with forced IPv4 DNS`);
-  console.log("════════════════════════════════════════════════════════════");
-  console.log("");
-});
+async function startServer() {
+  // Pre-resolve SMTP host to IPv4 on startup
+  if (process.env.SMTP_HOST) {
+    resolvedSmtpHost = await resolveSmtpHostToIPv4();
+  }
+
+  app.listen(PORT, () => {
+    console.log("");
+    console.log("════════════════════════════════════════════════════════════");
+    console.log(`🚀 API server running on http://localhost:${PORT}`);
+    console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
+    if (resolvedSmtpHost) {
+      console.log(`📧 Email: Ready (using IPv4: ${resolvedSmtpHost})`);
+    } else {
+      console.log(`📧 Email: Disabled (SMTP host not configured or resolved)`);
+    }
+    console.log("════════════════════════════════════════════════════════════");
+    console.log("");
+  });
+}
+
+startServer();
