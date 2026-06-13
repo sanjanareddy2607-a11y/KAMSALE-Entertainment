@@ -42,6 +42,52 @@ const upload = multer({
 app.use(cors());
 app.use(express.json());
 
+// ============================================================================
+// SMTP CONFIGURATION WITH RENDER COMPATIBILITY
+// ============================================================================
+
+let transporter: nodemailer.Transporter | null = null;
+
+function initializeEmailTransporter() {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn("⚠️  SMTP not configured — email notifications disabled.");
+    return;
+  }
+
+  transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === "true",
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    // Render compatibility settings
+    family: 4, // Force IPv4 (Render IPv6 support is limited)
+    connectionTimeout: 10000, // 10 seconds
+    socketTimeout: 10000, // 10 seconds
+    pool: {
+      maxConnections: 5,
+      maxMessages: 100,
+      rateDelta: 1000,
+      rateLimit: 5,
+    },
+  });
+
+  // Verify connection on startup
+  transporter.verify((err, success) => {
+    if (err) {
+      console.error("❌ SMTP verification failed:", err.message);
+      console.error("   Host:", process.env.SMTP_HOST);
+      console.error("   Port:", process.env.SMTP_PORT || 587);
+    } else {
+      console.log("✅ SMTP configured and verified successfully");
+    }
+  });
+}
+
+initializeEmailTransporter();
+
 function buildEmailBody(data: Record<string, string>) {
   const sections = [
     ["GUARDIAN INFORMATION", [
@@ -113,20 +159,10 @@ async function sendEmail(
   data: Record<string, string>,
   attachments: { filename: string; path: string }[]
 ) {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn("SMTP not configured — registration saved to database only.");
+  if (!transporter) {
+    console.warn("⚠️  SMTP not configured — skipping email send.");
     return;
   }
-
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
 
   await transporter.sendMail({
     from: process.env.SMTP_FROM || process.env.SMTP_USER,
@@ -184,12 +220,13 @@ app.post(
       // ✅ TRY TO SEND EMAIL (but don't fail registration if it fails)
       try {
         await sendEmail(emailData, attachments);
+        console.log(`✅ Email sent successfully for registration #${id}`);
       } catch (emailErr) {
+        const errorMsg = emailErr instanceof Error ? emailErr.message : String(emailErr);
         console.error(
           `⚠️  Email sending failed for registration #${id} (but registration was saved):`,
-          emailErr
+          errorMsg
         );
-        // Don't throw - registration is already saved to database
       }
 
       // ✅ ALWAYS RETURN SUCCESS if database save succeeded
@@ -237,14 +274,12 @@ if (fs.existsSync(DIST_DIR)) {
 }
 
 // SPA Fallback: Route all unknown requests to dist/index.html
-// Uses regex pattern to match any route that isn't an API route
 app.use((req, res) => {
   const indexPath = path.join(DIST_DIR, "index.html");
   
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    // Fallback if dist/index.html doesn't exist (development mode)
     res.status(404).json({ 
       error: "Not found",
       message: "dist/index.html not found. Make sure to run 'npm run build' before deploying." 
