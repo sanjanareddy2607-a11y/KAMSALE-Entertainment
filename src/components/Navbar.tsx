@@ -2,22 +2,35 @@ import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
+
 import { NAV_ITEMS, SITE } from "../data/content";
 import { useScrollSpy } from "../hooks/useScrollSpy";
+import { useLanguage } from "../context/LanguageContext";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
   const location = useLocation();
   const navigate = useNavigate();
+
+  const { lang, toggleLanguage, t } = useLanguage();
+
   const isHome = location.pathname === "/";
   const activeId = useScrollSpy(NAV_ITEMS.map((item) => item.id));
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 40);
+    const onScroll = () => {
+      setScrolled(window.scrollY > 40);
+    };
+
     onScroll();
+
     window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -26,36 +39,56 @@ export function Navbar() {
 
   const scrollTo = (id: string) => {
     setMobileOpen(false);
+
     if (!isHome) {
       navigate(`/#${id}`);
       return;
     }
-    const el = document.getElementById(id);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth" });
-    }
+
+    // Wait for mobile menu animation to finish
+    setTimeout(() => {
+      const el = document.getElementById(id);
+
+      if (el) {
+        el.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }
+    }, 350);
   };
 
   useEffect(() => {
     if (isHome && location.hash) {
       const id = location.hash.replace("#", "");
-      const el = document.getElementById(id);
-      if (el) {
-        setTimeout(() => el.scrollIntoView({ behavior: "smooth" }), 100);
-      }
+
+      // Wait for page render
+      setTimeout(() => {
+        const el = document.getElementById(id);
+
+        if (el) {
+          el.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }, 500);
     }
   }, [isHome, location.hash]);
 
   return (
     <header
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${
-        scrolled || !isHome ? "glass-nav premium-shadow" : "bg-transparent"
+        scrolled || !isHome
+          ? "glass-nav premium-shadow"
+          : "bg-transparent"
       }`}
     >
       <nav
         className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4 md:px-8"
         aria-label="Main navigation"
       >
+        {/* Logo */}
         <Link
           to="/"
           className="flex items-center gap-3 group"
@@ -68,16 +101,19 @@ export function Navbar() {
             width={48}
             height={48}
           />
+
           <div className="text-left">
             <span className="font-display text-lg md:text-xl font-semibold text-charcoal leading-tight block">
               {SITE.name}
             </span>
+
             <span className="text-[9px] md:text-[10px] text-gold-600 tracking-[0.18em] uppercase hidden sm:block font-medium">
               {SITE.tagline}
             </span>
           </div>
         </Link>
 
+        {/* Desktop Navigation */}
         <ul className="hidden lg:flex items-center gap-0.5 xl:gap-1">
           {NAV_ITEMS.map((item) => (
             <li key={item.id}>
@@ -88,16 +124,21 @@ export function Navbar() {
                   isHome && activeId === item.id
                     ? "text-gold-600"
                     : scrolled || !isHome
-                      ? "text-warm-gray hover:text-charcoal"
-                      : "text-white/80 hover:text-white"
+                    ? "text-warm-gray hover:text-charcoal"
+                    : "text-white/80 hover:text-white"
                 }`}
               >
-                {item.label}
+                {t(`nav.${item.id}` as any) || item.label}
+
                 {isHome && activeId === item.id && (
                   <motion.span
                     layoutId="nav-indicator"
                     className="absolute inset-0 rounded-full bg-gold-50 border border-gold-200/60 -z-10"
-                    transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 380,
+                      damping: 30,
+                    }}
                   />
                 )}
               </button>
@@ -105,33 +146,53 @@ export function Navbar() {
           ))}
         </ul>
 
-        <button
-          type="button"
-          onClick={() => scrollTo("contact")}
-          className={`hidden lg:inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500 ${
-            scrolled || !isHome
-              ? "bg-charcoal text-white hover:bg-gold-600 hover:shadow-lg hover:shadow-gold-400/20"
-              : "bg-white text-charcoal hover:bg-gold-100 hover:shadow-xl"
-          }`}
-        >
-          Book Event
-        </button>
+        {/* Right Side Actions */}
+        <div className="flex items-center">
+          {/* Desktop Book Event Button */}
+          <button
+            type="button"
+            onClick={() => scrollTo("contact")}
+            className={`hidden lg:inline-flex items-center gap-2 rounded-full px-6 py-2.5 text-sm font-medium transition-all duration-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500 ${
+              scrolled || !isHome
+                ? "bg-charcoal text-white hover:bg-gold-600 hover:shadow-lg hover:shadow-gold-400/20"
+                : "bg-white text-charcoal hover:bg-gold-100 hover:shadow-xl"
+            }`}
+          >
+            {t("nav.bookEvent")}
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setMobileOpen(!mobileOpen)}
-          className={`lg:hidden p-2 rounded-lg transition-colors ${
-            scrolled || !isHome
-              ? "text-charcoal hover:bg-gold-50"
-              : "text-white hover:bg-white/10"
-          }`}
-          aria-label={mobileOpen ? "Close menu" : "Open menu"}
-          aria-expanded={mobileOpen}
-        >
-          {mobileOpen ? <X size={24} /> : <Menu size={24} />}
-        </button>
+          {/* Language Toggle */}
+          <button
+            type="button"
+            onClick={toggleLanguage}
+            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all duration-300 ml-2 lg:ml-3 ${
+              scrolled || !isHome
+                ? "border-gold-200 text-charcoal hover:bg-gold-50"
+                : "border-white/30 text-white hover:bg-white/10"
+            }`}
+            aria-label="Toggle language"
+          >
+            {lang === "en" ? "🇮🇳 ಕನ್ನಡ" : "🇬🇧 English"}
+          </button>
+
+          {/* Mobile Hamburger Button */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen((prev) => !prev)}
+            className={`lg:hidden ml-2 p-2 rounded-lg transition-colors ${
+              scrolled || !isHome
+                ? "text-charcoal hover:bg-gold-50"
+                : "text-white hover:bg-white/10"
+            }`}
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileOpen}
+          >
+            {mobileOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
+        </div>
       </nav>
 
+      {/* Mobile Menu */}
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
@@ -153,17 +214,19 @@ export function Navbar() {
                         : "text-charcoal hover:bg-cream"
                     }`}
                   >
-                    {item.label}
+                    {t(`nav.${item.id}` as any) || item.label}
                   </button>
                 </li>
               ))}
+
+              {/* Mobile Book Event Button */}
               <li className="pt-2">
                 <button
                   type="button"
                   onClick={() => scrollTo("contact")}
                   className="w-full rounded-xl bg-charcoal px-4 py-3 text-white font-medium hover:bg-gold-600 transition-colors"
                 >
-                  Book Event
+                  {t("nav.bookEvent")}
                 </button>
               </li>
             </ul>

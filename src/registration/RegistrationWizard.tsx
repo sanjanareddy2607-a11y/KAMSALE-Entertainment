@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState, useRef, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
@@ -368,6 +368,7 @@ function DynamicTalentFields({
 
 export function RegistrationWizard() {
   const navigate = useNavigate();
+  const wizardRef = useRef<HTMLDivElement>(null);
   const [step, setStep] = useState(1);
   const [data, setData] = useState<RegistrationFormData>(
     INITIAL_REGISTRATION_FORM
@@ -409,22 +410,26 @@ export function RegistrationWizard() {
     }));
   };
 
-  const goNext = () => {
-    const stepErrors = validateStep(step, data);
-    if (Object.keys(stepErrors).length > 0) {
-      setErrors(stepErrors);
-      return;
-    }
-    setErrors({});
-    setStep((s) => Math.min(s + 1, REGISTRATION_STEPS.length));
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+const goNext = () => {
+  const stepErrors = validateStep(step, data);
+  if (Object.keys(stepErrors).length > 0) {
+    setErrors(stepErrors);
+    return;
+  }
+  setErrors({});
+  setStep((s) => Math.min(s + 1, REGISTRATION_STEPS.length));
+  setTimeout(() => {
+    wizardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 50);
+};
 
-  const goBack = () => {
-    setErrors({});
-    setStep((s) => Math.max(s - 1, 1));
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
+ const goBack = () => {
+  setErrors({});
+  setStep((s) => Math.max(s - 1, 1));
+  setTimeout(() => {
+    wizardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 50);
+};
 
   const handleSubmit = async () => {
     const stepErrors = validateStep(6, data);
@@ -879,7 +884,7 @@ export function RegistrationWizard() {
   };
 
   return (
-    <div className="rounded-3xl bg-white p-6 md:p-10 card-border premium-shadow-lg">
+    <div ref={wizardRef} className="rounded-3xl bg-white p-6 md:p-10 card-border premium-shadow-lg">
       <ProgressBar currentStep={step} />
 
       <AnimatePresence mode="wait">

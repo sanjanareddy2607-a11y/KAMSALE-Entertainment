@@ -303,14 +303,14 @@ export function FormFileUpload({
 
 interface FormCheckboxGroupProps {
   label: string;
-  values: string[];
+  values?: string[]; // ← was required, now optional
   onChange: (values: string[]) => void;
   options: readonly string[];
 }
 
 export function FormCheckboxGroup({
   label,
-  values,
+  values = [], // ← add default empty array
   onChange,
   options,
 }: FormCheckboxGroupProps) {
