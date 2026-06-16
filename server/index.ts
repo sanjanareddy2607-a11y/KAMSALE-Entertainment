@@ -338,49 +338,70 @@ app.use((_req, res) => {
 });
 
 // ============================================================================
-// SERVER START  — with upfront SMTP sanity check
+// SERVER START
 // ============================================================================
 
-async function startServer(): Promise<void> {
-  const line = "═".repeat(60);
-
-  // ── Verify SMTP credentials at startup so you know immediately if the
-  //    API key is wrong, expired, or revoked by SendGrid.
-  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
-    const testTransporter = createEmailTransporter();
-    if (testTransporter) {
-      try {
-        console.log("🔍 Testing SMTP connection at startup ...");
-        await testTransporter.verify();
-        console.log("✅ SMTP credentials verified — email is ready to send.");
-      } catch (err) {
-        const msg      = err instanceof Error ? err.message : String(err);
-        const code     = (err as NodeJS.ErrnoException)?.code ?? "";
-        const response = (err as { response?: string })?.response ?? "";
-        console.error("❌ SMTP startup check FAILED — emails will not send until this is fixed.");
-        console.error(`   Code    : ${code}`);
-        console.error(`   Response: ${response}`);
-        console.error(`   Message : ${msg}`);
-        console.error("");
-        console.error("   ► Most likely cause: SendGrid API key is invalid or revoked.");
-        console.error("   ► Fix: generate a new API key at https://app.sendgrid.com/settings/api_keys");
-        console.error("   ► Then update SMTP_PASS in your .env file and restart the server.");
-      } finally {
-        try { testTransporter.close(); } catch (_) { /* ignore */ }
-      }
-    }
-  } else {
-    console.warn("⚠️  SMTP not fully configured — email notifications disabled.");
+/**
+ * RENDER DEPLOYMENT FIX — two issues resolved:
+ *
+ * 1. The previous startServer() awaited transporter.verify() BEFORE calling
+ *    app.listen(). On Render, outbound port 587 is blocked so verify() hung
+ *    for ~30s, causing "No open ports detected" and a failed deploy.
+ *    Fix: bind the HTTP port first, run SMTP check in the background after.
+ *
+ * 2. Render free tier blocks outbound port 587 (STARTTLS/SMTP).
+ *    Fix: use port 465 (SMTPS/SSL) which Render allows.
+ *    Set these in your Render environment variables:
+ *      SMTP_PORT=465
+ *      SMTP_SECURE=true
+ */
+function runSmtpCheckInBackground(): void {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.warn("\u26a0\ufe0f  SMTP not fully configured \u2014 email notifications disabled.");
+    return;
   }
 
-  app.listen(PORT, () => {
-    console.log(`\n${line}`);
-    console.log(`🚀  Server    : http://localhost:${PORT}`);
-    console.log(`📦  Env       : ${process.env.NODE_ENV || "development"}`);
-    console.log(`📧  SMTP host : ${process.env.SMTP_HOST ?? "NOT SET"} port ${process.env.SMTP_PORT || 587}`);
-    console.log(`📬  Recipient : ${RECIPIENT_EMAIL}`);
-    console.log(`${line}\n`);
-  });
+  const testTransporter = createEmailTransporter();
+  if (!testTransporter) return;
+
+  console.log("\ud83d\udd0d Testing SMTP connection in background ...");
+
+  testTransporter.verify()
+    .then(() => {
+      console.log("\u2705 SMTP credentials verified \u2014 email is ready to send.");
+    })
+    .catch((err: unknown) => {
+      const msg      = err instanceof Error ? err.message : String(err);
+      const code     = (err as NodeJS.ErrnoException)?.code ?? "";
+      const response = (err as { response?: string })?.response ?? "";
+      console.error("\u274c SMTP background check FAILED \u2014 emails will not send.");
+      console.error(`   Code    : ${code}`);
+      console.error(`   Response: ${response}`);
+      console.error(`   Message : ${msg}`);
+      if (code === "ETIMEDOUT") {
+        console.error("   \u25ba ETIMEDOUT: your host is blocking port 587.");
+        console.error("     Switch to port 465 in your environment variables:");
+        console.error("     SMTP_PORT=465 and SMTP_SECURE=true");
+      } else {
+        console.error("   \u25ba Check your SMTP_PASS (SendGrid API key) is valid.");
+        console.error("   \u25ba https://app.sendgrid.com/settings/api_keys");
+      }
+    })
+    .finally(() => {
+      try { testTransporter.close(); } catch (_) { /* ignore */ }
+    });
 }
 
-startServer();
+// Bind HTTP port FIRST — never block it on SMTP.
+app.listen(PORT, () => {
+  const line = "\u2550".repeat(60);
+  console.log(`\n${line}`);
+  console.log(`\ud83d\ude80  Server    : http://localhost:${PORT}`);
+  console.log(`\ud83d\udce6  Env       : ${process.env.NODE_ENV || "development"}`);
+  console.log(`\ud83d\udce7  SMTP host : ${process.env.SMTP_HOST ?? "NOT SET"} port ${process.env.SMTP_PORT || 587}`);
+  console.log(`\ud83d\udce4  Recipient : ${RECIPIENT_EMAIL}`);
+  console.log(`${line}\n`);
+
+  // Non-blocking — runs after port is already bound and Render is happy
+  runSmtpCheckInBackground();
+});
