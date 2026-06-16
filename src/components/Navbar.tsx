@@ -171,7 +171,7 @@ export function Navbar() {
             }`}
             aria-label="Toggle language"
           >
-            {lang === "en" ? "🇮🇳 ಕನ್ನಡ" : "🇬🇧 English"}
+            {lang === "en" ? "🇮🇳 ಕನ್ನಡ" : "🇮🇳 English"}
           </button>
 
           {/* Mobile Hamburger Button */}
