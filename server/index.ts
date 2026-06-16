@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import nodemailer from "nodemailer";
+import { Resend } from "resend";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -13,10 +13,10 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
-const app          = express();
-const PORT         = process.env.PORT || 3001;
-const UPLOAD_DIR   = path.join(__dirname, "..", "uploads");
-const DIST_DIR     = path.join(__dirname, "..", "dist");
+const app             = express();
+const PORT            = process.env.PORT || 3001;
+const UPLOAD_DIR      = path.join(__dirname, "..", "uploads");
+const DIST_DIR        = path.join(__dirname, "..", "dist");
 const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL || "vinoothanagoldensingers@gmail.com";
 
 if (!fs.existsSync(UPLOAD_DIR)) {
@@ -39,78 +39,33 @@ const upload = multer({
 });
 
 // ============================================================================
-// SMTP — transporter factory
+// RESEND — email client factory
 // ============================================================================
 
 /**
- * ROOT CAUSE OF ESOCKET:
- *   The previous version pre-resolved "smtp.sendgrid.net" to a raw IPv4
- *   address (46.137.211.255) and passed that IP as `host`. This broke TLS
- *   because SendGrid's certificate is issued to "smtp.sendgrid.net", not
- *   to any IP address. Node/OpenSSL cannot match "IP: 46.137.211.255"
- *   against the cert's altNames → ESOCKET "Hostname/IP does not match
- *   certificate's altnames".
+ * WHY RESEND INSTEAD OF SMTP:
+ *   Render's free plan blocks all outbound SMTP ports (25, 465, 587) at the
+ *   network level. No nodemailer/SendGrid configuration can work around this
+ *   because the TCP connection itself never reaches the mail server.
  *
- * FIX:
- *   Always pass the hostname string as `host`. The TLS library uses the
- *   hostname for SNI (Server Name Indication) and certificate validation
- *   automatically. We also set `tls.servername` explicitly to the same
- *   hostname as a belt-and-suspenders measure.
+ *   Resend sends email over HTTPS (port 443), which Render never blocks.
+ *   Free tier: 3,000 emails/month, 100/day — plenty for registration events.
  *
- *   No DNS pre-resolution is needed. Node resolves the hostname internally
- *   and always connects over IPv4 or IPv6 — either works fine for TLS as
- *   long as cert validation uses the hostname, not the IP.
+ * FREE TIER RESTRICTION:
+ *   On Resend's free plan you can only send TO your own verified email address
+ *   unless you add and verify a custom domain. Since RECIPIENT_EMAIL is your
+ *   own address (vinoothanagoldensingers@gmail.com), verify it in Resend under
+ *   Emails → Add Email Address, then set FROM to: onboarding@resend.dev
+ *
+ *   If you add a custom domain later, change FROM to: noreply@yourdomain.com
  */
-function createEmailTransporter(): nodemailer.Transporter | null {
-  const smtpHost = process.env.SMTP_HOST;
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-
-  if (!smtpHost || !smtpUser || !smtpPass) {
-    console.error(
-      "❌ Cannot create transporter — missing: " +
-      [!smtpHost && "SMTP_HOST", !smtpUser && "SMTP_USER", !smtpPass && "SMTP_PASS"]
-        .filter(Boolean).join(", ")
-    );
+function getResendClient(): Resend | null {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) {
+    console.error("❌ RESEND_API_KEY not set — email notifications disabled.");
     return null;
   }
-
-  const port   = Number(process.env.SMTP_PORT || 587);
-  const secure = process.env.SMTP_SECURE === "true"; // true only for port 465
-
-  console.log(
-    `🔧 Creating SMTP transporter → ${smtpHost}:${port} ` +
-    `(secure=${secure}, requireTLS=${!secure}, user=${smtpUser})`
-  );
-
-  return nodemailer.createTransport({
-    pool: true,           // top-level → selects SMTPPool.Options overload
-    host: smtpHost,       // ALWAYS the hostname string, never a raw IP
-    port,
-    secure,               // false for port 587
-    requireTLS: !secure,  // true for port 587 → enforces STARTTLS upgrade
-    auth: {
-      user: smtpUser,
-      pass: smtpPass,
-    },
-    connectionTimeout: 15_000,
-    greetingTimeout:   15_000,
-    socketTimeout:     20_000,
-    maxConnections: 2,
-    maxMessages:   50,
-    rateDelta:   2_000,
-    rateLimit:       3,
-    tls: {
-      // Explicitly tell OpenSSL which hostname to validate in the TLS cert.
-      // This ensures cert validation always uses the hostname (smtp.sendgrid.net)
-      // regardless of how the TCP socket was resolved internally.
-      servername:         smtpHost,
-      rejectUnauthorized: true,
-      minVersion:         "TLSv1.2",
-    } as import("tls").ConnectionOptions,
-    logger: false,
-    debug:  false,
-  });
+  return new Resend(apiKey);
 }
 
 // ============================================================================
@@ -193,45 +148,43 @@ async function sendEmailAsync(
   data:        Record<string, string>,
   attachments: { filename: string; path: string }[],
 ): Promise<void> {
-  const transporter = createEmailTransporter();
-  if (!transporter) {
-    console.warn(`⚠️  [Reg #${id}] No transporter — skipping email.`);
+  const resend = getResendClient();
+  if (!resend) {
+    console.warn(`⚠️  [Reg #${id}] No Resend client — skipping email.`);
     return;
   }
 
-  // SMTP_FROM may be "Display Name <addr>" — used only in mail headers, not SMTP auth.
-  const fromField = process.env.SMTP_FROM || process.env.SMTP_USER;
+  // Read each uploaded file into a Buffer for the Resend attachments API.
+  // Resend does not accept file paths — it needs the raw content.
+  const resendAttachments = attachments.map((a) => ({
+    filename: a.filename,
+    content:  fs.readFileSync(a.path),
+  }));
 
   try {
-    console.log(`🔐 [Reg #${id}] Verifying SMTP credentials ...`);
-    await transporter.verify();
-    console.log(`✅ [Reg #${id}] SMTP auth OK`);
+    console.log(`📨 [Reg #${id}] Sending via Resend → ${RECIPIENT_EMAIL} ...`);
 
-    console.log(`📨 [Reg #${id}] Sending → ${RECIPIENT_EMAIL} ...`);
-    const info = await transporter.sendMail({
-      from:        fromField,
-      to:          RECIPIENT_EMAIL,
+    const { data: result, error } = await resend.emails.send({
+      // FREE TIER: use onboarding@resend.dev as FROM until you verify a domain.
+      // After verifying a custom domain, change this to: noreply@yourdomain.com
+      from:        "Kamsale Entertainment <onboarding@resend.dev>",
+      to:          [RECIPIENT_EMAIL],
       subject:     `Vinootana Golden Singers — New Registration: ${data.participantName}`,
       text:        buildEmailBody(data),
-      attachments,
+      attachments: resendAttachments,
     });
 
-    console.log(`✅ [Reg #${id}] Email sent! Message-ID: ${info.messageId}`);
+    if (error) {
+      console.error(`❌ [Reg #${id}] Resend returned an error:`);
+      console.error(`   Name   : ${error.name}`);
+      console.error(`   Message: ${error.message}`);
+    } else {
+      console.log(`✅ [Reg #${id}] Email sent! Resend ID: ${result?.id}`);
+    }
   } catch (err) {
-    const errorMsg      = err instanceof Error ? err.message                     : String(err);
-    const errorCode     = (err as NodeJS.ErrnoException)?.code                  ?? "UNKNOWN";
-    const errorResponse = (err as { response?:     string })?.response           ?? "";
-    const errorCommand  = (err as { command?:      string })?.command            ?? "";
-    const errorRespCode = (err as { responseCode?: number })?.responseCode       ?? "";
-
+    const errorMsg = err instanceof Error ? err.message : String(err);
     console.error(`❌ [Reg #${id}] Email FAILED — data is safely stored in SQLite.`);
-    console.error(`   Code         : ${errorCode}`);
-    console.error(`   Response Code: ${errorRespCode}`);
-    console.error(`   SMTP Command : ${errorCommand}`);
-    console.error(`   SMTP Response: ${errorResponse}`);
-    console.error(`   Message      : ${errorMsg}`);
-  } finally {
-    try { transporter.close(); } catch (_) { /* pool close */ }
+    console.error(`   Message: ${errorMsg}`);
   }
 }
 
@@ -244,10 +197,9 @@ app.use(express.json());
 
 app.get("/api/health", (_req, res) => {
   res.json({
-    status:         "ok",
-    smtpHost:       process.env.SMTP_HOST ?? "not configured",
-    smtpUser:       process.env.SMTP_USER ?? "not configured",
-    recipient:      RECIPIENT_EMAIL,
+    status:    "ok",
+    emailMode: process.env.RESEND_API_KEY ? "resend ✅" : "disabled ❌",
+    recipient: RECIPIENT_EMAIL,
   });
 });
 
@@ -342,66 +294,23 @@ app.use((_req, res) => {
 // ============================================================================
 
 /**
- * RENDER DEPLOYMENT FIX — two issues resolved:
+ * RENDER FREE PLAN — why this works now:
  *
- * 1. The previous startServer() awaited transporter.verify() BEFORE calling
- *    app.listen(). On Render, outbound port 587 is blocked so verify() hung
- *    for ~30s, causing "No open ports detected" and a failed deploy.
- *    Fix: bind the HTTP port first, run SMTP check in the background after.
+ *   Old approach used nodemailer over SMTP (ports 465 / 587).
+ *   Render's free plan blocks ALL outbound SMTP ports at the network level,
+ *   so every verify() call timed out and email never sent.
  *
- * 2. Render free tier blocks outbound port 587 (STARTTLS/SMTP).
- *    Fix: use port 465 (SMTPS/SSL) which Render allows.
- *    Set these in your Render environment variables:
- *      SMTP_PORT=465
- *      SMTP_SECURE=true
+ *   New approach uses Resend's HTTP API (port 443 / HTTPS).
+ *   Render never blocks port 443 — the same port your web server listens on.
+ *   No background connection check is needed; the API call happens only when
+ *   a registration is submitted, so startup is instant.
  */
-function runSmtpCheckInBackground(): void {
-  if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    console.warn("\u26a0\ufe0f  SMTP not fully configured \u2014 email notifications disabled.");
-    return;
-  }
-
-  const testTransporter = createEmailTransporter();
-  if (!testTransporter) return;
-
-  console.log("\ud83d\udd0d Testing SMTP connection in background ...");
-
-  testTransporter.verify()
-    .then(() => {
-      console.log("\u2705 SMTP credentials verified \u2014 email is ready to send.");
-    })
-    .catch((err: unknown) => {
-      const msg      = err instanceof Error ? err.message : String(err);
-      const code     = (err as NodeJS.ErrnoException)?.code ?? "";
-      const response = (err as { response?: string })?.response ?? "";
-      console.error("\u274c SMTP background check FAILED \u2014 emails will not send.");
-      console.error(`   Code    : ${code}`);
-      console.error(`   Response: ${response}`);
-      console.error(`   Message : ${msg}`);
-      if (code === "ETIMEDOUT") {
-        console.error("   \u25ba ETIMEDOUT: your host is blocking port 587.");
-        console.error("     Switch to port 465 in your environment variables:");
-        console.error("     SMTP_PORT=465 and SMTP_SECURE=true");
-      } else {
-        console.error("   \u25ba Check your SMTP_PASS (SendGrid API key) is valid.");
-        console.error("   \u25ba https://app.sendgrid.com/settings/api_keys");
-      }
-    })
-    .finally(() => {
-      try { testTransporter.close(); } catch (_) { /* ignore */ }
-    });
-}
-
-// Bind HTTP port FIRST — never block it on SMTP.
 app.listen(PORT, () => {
-  const line = "\u2550".repeat(60);
+  const line = "═".repeat(60);
   console.log(`\n${line}`);
-  console.log(`\ud83d\ude80  Server    : http://localhost:${PORT}`);
-  console.log(`\ud83d\udce6  Env       : ${process.env.NODE_ENV || "development"}`);
-  console.log(`\ud83d\udce7  SMTP host : ${process.env.SMTP_HOST ?? "NOT SET"} port ${process.env.SMTP_PORT || 587}`);
-  console.log(`\ud83d\udce4  Recipient : ${RECIPIENT_EMAIL}`);
+  console.log(`🚀  Server    : http://localhost:${PORT}`);
+  console.log(`📦  Env       : ${process.env.NODE_ENV || "development"}`);
+  console.log(`📧  Email     : ${process.env.RESEND_API_KEY ? "Resend API ✅" : "RESEND_API_KEY not set ❌"}`);
+  console.log(`📤  Recipient : ${RECIPIENT_EMAIL}`);
   console.log(`${line}\n`);
-
-  // Non-blocking — runs after port is already bound and Render is happy
-  runSmtpCheckInBackground();
 });
