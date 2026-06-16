@@ -4,8 +4,6 @@ import multer from "multer";
 import nodemailer from "nodemailer";
 import path from "path";
 import fs from "fs";
-import dns from "dns";
-import { promises as dnsPromises } from "dns";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { initDatabase, insertRegistration, searchRegistrations } from "./db.ts";
@@ -13,14 +11,13 @@ import { initDatabase, insertRegistration, searchRegistrations } from "./db.ts";
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname  = path.dirname(__filename);
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-const UPLOAD_DIR = path.join(__dirname, "..", "uploads");
-const DIST_DIR = path.join(__dirname, "..", "dist");
-const RECIPIENT_EMAIL =
-  process.env.RECIPIENT_EMAIL || "vinoothanagoldensingers@gmail.com";
+const app          = express();
+const PORT         = process.env.PORT || 3001;
+const UPLOAD_DIR   = path.join(__dirname, "..", "uploads");
+const DIST_DIR     = path.join(__dirname, "..", "dist");
+const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL || "vinoothanagoldensingers@gmail.com";
 
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -30,7 +27,7 @@ initDatabase();
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
-  filename: (_req, file, cb) => {
+  filename:    (_req,  file, cb) => {
     const unique = `${Date.now()}-${Math.round(Math.random() * 1e9)}`;
     cb(null, `${unique}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_")}`);
   },
@@ -41,128 +38,135 @@ const upload = multer({
   limits: { fileSize: 100 * 1024 * 1024 },
 });
 
-app.use(cors());
-app.use(express.json());
-
 // ============================================================================
-// SMTP CONFIGURATION - PRE-RESOLVED IPv4 ADDRESS
+// SMTP — transporter factory
 // ============================================================================
 
-// Global DNS settings - force IPv4
-dns.setDefaultResultOrder('ipv4first');
+/**
+ * ROOT CAUSE OF ESOCKET:
+ *   The previous version pre-resolved "smtp.sendgrid.net" to a raw IPv4
+ *   address (46.137.211.255) and passed that IP as `host`. This broke TLS
+ *   because SendGrid's certificate is issued to "smtp.sendgrid.net", not
+ *   to any IP address. Node/OpenSSL cannot match "IP: 46.137.211.255"
+ *   against the cert's altNames → ESOCKET "Hostname/IP does not match
+ *   certificate's altnames".
+ *
+ * FIX:
+ *   Always pass the hostname string as `host`. The TLS library uses the
+ *   hostname for SNI (Server Name Indication) and certificate validation
+ *   automatically. We also set `tls.servername` explicitly to the same
+ *   hostname as a belt-and-suspenders measure.
+ *
+ *   No DNS pre-resolution is needed. Node resolves the hostname internally
+ *   and always connects over IPv4 or IPv6 — either works fine for TLS as
+ *   long as cert validation uses the hostname, not the IP.
+ */
+function createEmailTransporter(): nodemailer.Transporter | null {
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
 
-let resolvedSmtpHost: string | null = null;
-
-// Pre-resolve SMTP host to IPv4 address to bypass DNS during connection
-async function resolveSmtpHostToIPv4(): Promise<string | null> {
-  if (!process.env.SMTP_HOST) {
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.error(
+      "❌ Cannot create transporter — missing: " +
+      [!smtpHost && "SMTP_HOST", !smtpUser && "SMTP_USER", !smtpPass && "SMTP_PASS"]
+        .filter(Boolean).join(", ")
+    );
     return null;
   }
 
-  try {
-    console.log(`🔍 Pre-resolving SMTP host ${process.env.SMTP_HOST} to IPv4...`);
-    const addresses = await dnsPromises.resolve4(process.env.SMTP_HOST);
-    
-    if (addresses.length === 0) {
-      console.error(`❌ No IPv4 addresses found for ${process.env.SMTP_HOST}`);
-      return null;
-    }
+  const port   = Number(process.env.SMTP_PORT || 587);
+  const secure = process.env.SMTP_SECURE === "true"; // true only for port 465
 
-    const ipv4Address = addresses[0];
-    console.log(`✅ Resolved ${process.env.SMTP_HOST} to IPv4: ${ipv4Address}`);
-    return ipv4Address;
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    console.error(`❌ Failed to resolve SMTP host: ${errorMsg}`);
-    // Fallback to hostname if resolution fails
-    return process.env.SMTP_HOST;
-  }
-}
-
-function createEmailTransporter(smtpHost: string): nodemailer.Transporter | null {
-  if (!smtpHost || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-    return null;
-  }
+  console.log(
+    `🔧 Creating SMTP transporter → ${smtpHost}:${port} ` +
+    `(secure=${secure}, requireTLS=${!secure}, user=${smtpUser})`
+  );
 
   return nodemailer.createTransport({
-    host: smtpHost, // Use pre-resolved IPv4 address
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true",
+    pool: true,           // top-level → selects SMTPPool.Options overload
+    host: smtpHost,       // ALWAYS the hostname string, never a raw IP
+    port,
+    secure,               // false for port 587
+    requireTLS: !secure,  // true for port 587 → enforces STARTTLS upgrade
     auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
+      user: smtpUser,
+      pass: smtpPass,
     },
-    // Force IPv4 at every level
-    family: 4,
-    // Connection timeout settings
-    connectionTimeout: 10000, // 10 seconds
-    greetingTimeout: 10000, // 10 seconds
-    socketTimeout: 15000, // 15 seconds
-    // Connection pool
-    pool: {
-      maxConnections: 2,
-      maxMessages: 50,
-      rateDelta: 2000,
-      rateLimit: 3,
-    },
-    // TLS settings
+    connectionTimeout: 15_000,
+    greetingTimeout:   15_000,
+    socketTimeout:     20_000,
+    maxConnections: 2,
+    maxMessages:   50,
+    rateDelta:   2_000,
+    rateLimit:       3,
     tls: {
+      // Explicitly tell OpenSSL which hostname to validate in the TLS cert.
+      // This ensures cert validation always uses the hostname (smtp.sendgrid.net)
+      // regardless of how the TCP socket was resolved internally.
+      servername:         smtpHost,
       rejectUnauthorized: true,
-      minVersion: 'TLSv1.2',
-    },
+      minVersion:         "TLSv1.2",
+    } as import("tls").ConnectionOptions,
+    logger: false,
+    debug:  false,
   });
 }
 
-function buildEmailBody(data: Record<string, string>) {
-  const sections = [
+// ============================================================================
+// EMAIL BODY BUILDER
+// ============================================================================
+
+function buildEmailBody(data: Record<string, string>): string {
+  const sections: [string, [string, string][]][] = [
     ["GUARDIAN INFORMATION", [
-      ["Guardian Full Name", data.guardianName],
-      ["Mobile Number", data.guardianMobile],
-      ["Alternate Mobile", data.guardianAltMobile],
-      ["Email Address", data.guardianEmail],
-      ["District", data.district],
-      ["City / Taluk", data.city],
-      ["Complete Address", data.address],
-      ["Pincode", data.pincode],
+      ["Guardian Full Name",    data.guardianName],
+      ["Mobile Number",         data.guardianMobile],
+      ["Alternate Mobile",      data.guardianAltMobile],
+      ["Email Address",         data.guardianEmail],
+      ["District",              data.district],
+      ["City / Taluk",          data.city],
+      ["Complete Address",      data.address],
+      ["Pincode",               data.pincode],
     ]],
     ["PARTICIPANT INFORMATION", [
-      ["Participant Full Name", data.participantName],
-      ["Date of Birth", data.participantDob],
-      ["Age", data.participantAge],
-      ["Gender", data.participantGender],
+      ["Participant Full Name",  data.participantName],
+      ["Date of Birth",          data.participantDob],
+      ["Age",                    data.participantAge],
+      ["Gender",                 data.participantGender],
     ]],
     ["SPECIAL ABILITY INFORMATION", [
-      ["Category", data.specialAbilityCategory],
+      ["Category",               data.specialAbilityCategory],
       ["Additional Description", data.specialAbilityDescription],
-      ["Requires Assistance", data.requiresAssistance],
+      ["Requires Assistance",    data.requiresAssistance],
       ["Assistance Description", data.assistanceDescription],
     ]],
     ["TALENT INFORMATION", [
-      ["Primary Talent", data.primaryTalent],
-      ["Secondary Talents", data.secondaryTalents],
-      ["Talent Experience", data.talentExperience],
-      ["Performance Level", data.performanceLevel],
-      ["Performed Before", data.performedBefore],
-      ["Performance Description", data.performanceDescription],
-      ["Talent Details", data.talentDetails],
+      ["Primary Talent",         data.primaryTalent],
+      ["Secondary Talents",      data.secondaryTalents],
+      ["Talent Experience",      data.talentExperience],
+      ["Performance Level",      data.performanceLevel],
+      ["Performed Before",       data.performedBefore],
+      ["Performance Description",data.performanceDescription],
+      ["Talent Details",         data.talentDetails],
     ]],
     ["AVAILABILITY & FUTURE OPPORTUNITIES", [
       ["Travel Across Karnataka", data.travelComfort],
-      ["Future Opportunities", data.futureOpportunities],
-      ["Notifications", data.notifications],
-      ["Instagram", data.instagram],
-      ["YouTube", data.youtube],
-      ["Facebook", data.facebook],
-      ["Portfolio Website", data.portfolioWebsite],
-      ["Biography", data.biography],
-      ["Achievements", data.achievements],
-      ["Additional Notes", data.additionalNotes],
+      ["Future Opportunities",    data.futureOpportunities],
+      ["Notifications",           data.notifications],
+      ["Instagram",               data.instagram],
+      ["YouTube",                 data.youtube],
+      ["Facebook",                data.facebook],
+      ["Portfolio Website",       data.portfolioWebsite],
+      ["Biography",               data.biography],
+      ["Achievements",            data.achievements],
+      ["Additional Notes",        data.additionalNotes],
     ]],
   ];
 
-  let text = `VINOOTANA GOLDEN SINGERS — NEW REGISTRATION\n`;
-  text += `Event: ${data.eventSlug}\n`;
-  text += `Submitted: ${new Date().toISOString()}\n\n`;
+  let text  = `VINOOTANA GOLDEN SINGERS — NEW REGISTRATION\n`;
+  text     += `Event    : ${data.eventSlug}\n`;
+  text     += `Submitted: ${new Date().toISOString()}\n\n`;
 
   for (const [title, fields] of sections) {
     text += `${title}\n${"=".repeat(title.length)}\n`;
@@ -172,74 +176,91 @@ function buildEmailBody(data: Record<string, string>) {
     text += "\n";
   }
 
-  text += `UPLOADED FILES\n==============\n`;
-  if (data.participantPhotoPath) text += `Participant Photo: ${data.participantPhotoPath}\n`;
-  if (data.auditionFilePath) text += `Audition File: ${data.auditionFilePath}\n`;
-  if (data.portfolioFilePath) text += `Portfolio File: ${data.portfolioFilePath}\n`;
+  text += "UPLOADED FILES\n==============\n";
+  if (data.participantPhotoPath) text += `Participant Photo : ${data.participantPhotoPath}\n`;
+  if (data.auditionFilePath)     text += `Audition File    : ${data.auditionFilePath}\n`;
+  if (data.portfolioFilePath)    text += `Portfolio File   : ${data.portfolioFilePath}\n`;
 
   return text;
 }
 
-// Non-blocking async email sender with pre-resolved SMTP host
+// ============================================================================
+// FIRE-AND-FORGET EMAIL SENDER
+// ============================================================================
+
 async function sendEmailAsync(
-  id: string,
-  data: Record<string, string>,
-  attachments: { filename: string; path: string }[]
-) {
-  if (!resolvedSmtpHost) {
-    console.warn(`⚠️  [Reg #${id}] SMTP host not resolved — skipping email.`);
+  id:          string,
+  data:        Record<string, string>,
+  attachments: { filename: string; path: string }[],
+): Promise<void> {
+  const transporter = createEmailTransporter();
+  if (!transporter) {
+    console.warn(`⚠️  [Reg #${id}] No transporter — skipping email.`);
     return;
   }
 
-  const transporter = createEmailTransporter(resolvedSmtpHost);
-  
-  if (!transporter) {
-    console.warn(`⚠️  [Reg #${id}] Failed to create SMTP transporter — skipping email.`);
-    return;
-  }
+  // SMTP_FROM may be "Display Name <addr>" — used only in mail headers, not SMTP auth.
+  const fromField = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   try {
-    console.log(`📨 [Reg #${id}] Sending email to ${RECIPIENT_EMAIL}...`);
-    
+    console.log(`🔐 [Reg #${id}] Verifying SMTP credentials ...`);
+    await transporter.verify();
+    console.log(`✅ [Reg #${id}] SMTP auth OK`);
+
+    console.log(`📨 [Reg #${id}] Sending → ${RECIPIENT_EMAIL} ...`);
     const info = await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: RECIPIENT_EMAIL,
-      subject: `Vinootana Golden Singers — New Registration: ${data.participantName}`,
-      text: buildEmailBody(data),
+      from:        fromField,
+      to:          RECIPIENT_EMAIL,
+      subject:     `Vinootana Golden Singers — New Registration: ${data.participantName}`,
+      text:        buildEmailBody(data),
       attachments,
     });
-    
-    console.log(`✅ [Reg #${id}] Email sent successfully! (Message ID: ${info.messageId})`);
-    transporter.close();
+
+    console.log(`✅ [Reg #${id}] Email sent! Message-ID: ${info.messageId}`);
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    const errorCode = (err as any)?.code || "UNKNOWN";
-    console.error(`❌ [Reg #${id}] Email sending failed (registration still saved)`);
-    console.error(`   Code: ${errorCode}`);
-    console.error(`   Error: ${errorMsg}`);
-    console.error(`   Note: Registration #${id} is safely stored in SQLite`);
-    try {
-      transporter.close();
-    } catch (closeErr) {
-      // Ignore close errors
-    }
+    const errorMsg      = err instanceof Error ? err.message                     : String(err);
+    const errorCode     = (err as NodeJS.ErrnoException)?.code                  ?? "UNKNOWN";
+    const errorResponse = (err as { response?:     string })?.response           ?? "";
+    const errorCommand  = (err as { command?:      string })?.command            ?? "";
+    const errorRespCode = (err as { responseCode?: number })?.responseCode       ?? "";
+
+    console.error(`❌ [Reg #${id}] Email FAILED — data is safely stored in SQLite.`);
+    console.error(`   Code         : ${errorCode}`);
+    console.error(`   Response Code: ${errorRespCode}`);
+    console.error(`   SMTP Command : ${errorCommand}`);
+    console.error(`   SMTP Response: ${errorResponse}`);
+    console.error(`   Message      : ${errorMsg}`);
+  } finally {
+    try { transporter.close(); } catch (_) { /* pool close */ }
   }
 }
 
 // ============================================================================
-// API ROUTES (defined BEFORE static middleware to take priority)
+// API ROUTES  (before static middleware)
 // ============================================================================
+
+app.use(cors());
+app.use(express.json());
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status:         "ok",
+    smtpHost:       process.env.SMTP_HOST ?? "not configured",
+    smtpUser:       process.env.SMTP_USER ?? "not configured",
+    recipient:      RECIPIENT_EMAIL,
+  });
+});
 
 app.post(
   "/api/registrations",
   upload.fields([
     { name: "participantPhoto", maxCount: 1 },
-    { name: "auditionFile", maxCount: 1 },
-    { name: "portfolioFile", maxCount: 1 },
+    { name: "auditionFile",     maxCount: 1 },
+    { name: "portfolioFile",    maxCount: 1 },
   ]),
   async (req, res) => {
     try {
-      const body = req.body as Record<string, string>;
+      const body  = req.body  as Record<string, string>;
       const files = req.files as Record<string, Express.Multer.File[]>;
 
       if (!body.guardianName || !body.participantName || !body.district) {
@@ -249,59 +270,45 @@ app.post(
 
       const filePaths = {
         participantPhoto: files.participantPhoto?.[0]?.filename ?? null,
-        auditionFile: files.auditionFile?.[0]?.filename ?? null,
-        portfolioFile: files.portfolioFile?.[0]?.filename ?? null,
+        auditionFile:     files.auditionFile?.[0]?.filename     ?? null,
+        portfolioFile:    files.portfolioFile?.[0]?.filename    ?? null,
       };
 
-      // ✅ SAVE TO DATABASE FIRST
       const id = insertRegistration(body, filePaths);
-      console.log(`✅ [Reg #${id}] Saved to SQLite database`);
+      console.log(`✅ [Reg #${id}] Saved to SQLite`);
 
       const emailData = {
         ...body,
         participantPhotoPath: filePaths.participantPhoto ?? "",
-        auditionFilePath: filePaths.auditionFile ?? "",
-        portfolioFilePath: filePaths.portfolioFile ?? "",
+        auditionFilePath:     filePaths.auditionFile     ?? "",
+        portfolioFilePath:    filePaths.portfolioFile    ?? "",
       };
 
       const attachments = Object.values(files)
         .flat()
-        .map((f) => ({
-          filename: f.originalname,
-          path: f.path,
-        }));
+        .map((f) => ({ filename: f.originalname, path: f.path }));
 
-      // ✅ SEND EMAIL NON-BLOCKING (fire and forget)
-      // This does NOT await, so email failures never block the response
-      sendEmailAsync(String(id), emailData, attachments).catch((err) => {
-        console.error(`❌ [Reg #${id}] Uncaught email error:`, err);
-      });
+      sendEmailAsync(String(id), emailData, attachments).catch((err) =>
+        console.error(`❌ [Reg #${id}] Uncaught async email error:`, err)
+      );
 
-      // ✅ ALWAYS RETURN SUCCESS if database save succeeded
-      console.log(`✅ [Reg #${id}] Registration request completed successfully`);
       res.json({ success: true, id });
     } catch (err) {
-      console.error("❌ Registration error:", err);
+      console.error("❌ Registration handler error:", err);
       res.status(500).json({ error: "Failed to process registration" });
     }
   }
 );
 
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
 app.get("/api/registrations/search", (req, res) => {
   try {
     const results = searchRegistrations({
-      district: req.query.district as string | undefined,
-      primaryTalent: req.query.primaryTalent as string | undefined,
-      performanceLevel: req.query.performanceLevel as string | undefined,
-      talentExperience: req.query.talentExperience as string | undefined,
-      specialAbilityCategory: req.query.specialAbilityCategory as
-        | string
-        | undefined,
-      travelComfort: req.query.travelComfort as string | undefined,
+      district:               req.query.district               as string | undefined,
+      primaryTalent:          req.query.primaryTalent          as string | undefined,
+      performanceLevel:       req.query.performanceLevel       as string | undefined,
+      talentExperience:       req.query.talentExperience       as string | undefined,
+      specialAbilityCategory: req.query.specialAbilityCategory as string | undefined,
+      travelComfort:          req.query.travelComfort          as string | undefined,
     });
     res.json({ results, count: results.length });
   } catch (err) {
@@ -311,53 +318,68 @@ app.get("/api/registrations/search", (req, res) => {
 });
 
 // ============================================================================
-// STATIC FILES & SPA FALLBACK (for Vite build in production)
+// STATIC FILES & SPA FALLBACK
 // ============================================================================
 
-// Serve static files from the dist folder
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR, { maxAge: "1d" }));
   console.log(`📁 Serving static files from: ${DIST_DIR}`);
 } else {
-  console.warn(`⚠️  dist folder not found at ${DIST_DIR} — static files will not be served`);
+  console.warn(`⚠️  dist/ not found at ${DIST_DIR} — run "npm run build" first`);
 }
 
-// SPA Fallback: Route all unknown requests to dist/index.html
-app.use((req, res) => {
+app.use((_req, res) => {
   const indexPath = path.join(DIST_DIR, "index.html");
-  
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).json({ 
-      error: "Not found",
-      message: "dist/index.html not found. Make sure to run 'npm run build' before deploying." 
-    });
+    res.status(404).json({ error: 'Not found — run "npm run build" before deploying.' });
   }
 });
 
 // ============================================================================
-// START SERVER
+// SERVER START  — with upfront SMTP sanity check
 // ============================================================================
 
-async function startServer() {
-  // Pre-resolve SMTP host to IPv4 on startup
-  if (process.env.SMTP_HOST) {
-    resolvedSmtpHost = await resolveSmtpHostToIPv4();
+async function startServer(): Promise<void> {
+  const line = "═".repeat(60);
+
+  // ── Verify SMTP credentials at startup so you know immediately if the
+  //    API key is wrong, expired, or revoked by SendGrid.
+  if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+    const testTransporter = createEmailTransporter();
+    if (testTransporter) {
+      try {
+        console.log("🔍 Testing SMTP connection at startup ...");
+        await testTransporter.verify();
+        console.log("✅ SMTP credentials verified — email is ready to send.");
+      } catch (err) {
+        const msg      = err instanceof Error ? err.message : String(err);
+        const code     = (err as NodeJS.ErrnoException)?.code ?? "";
+        const response = (err as { response?: string })?.response ?? "";
+        console.error("❌ SMTP startup check FAILED — emails will not send until this is fixed.");
+        console.error(`   Code    : ${code}`);
+        console.error(`   Response: ${response}`);
+        console.error(`   Message : ${msg}`);
+        console.error("");
+        console.error("   ► Most likely cause: SendGrid API key is invalid or revoked.");
+        console.error("   ► Fix: generate a new API key at https://app.sendgrid.com/settings/api_keys");
+        console.error("   ► Then update SMTP_PASS in your .env file and restart the server.");
+      } finally {
+        try { testTransporter.close(); } catch (_) { /* ignore */ }
+      }
+    }
+  } else {
+    console.warn("⚠️  SMTP not fully configured — email notifications disabled.");
   }
 
   app.listen(PORT, () => {
-    console.log("");
-    console.log("════════════════════════════════════════════════════════════");
-    console.log(`🚀 API server running on http://localhost:${PORT}`);
-    console.log(`📦 Environment: ${process.env.NODE_ENV || "development"}`);
-    if (resolvedSmtpHost) {
-      console.log(`📧 Email: Ready (using IPv4: ${resolvedSmtpHost})`);
-    } else {
-      console.log(`📧 Email: Disabled (SMTP host not configured or resolved)`);
-    }
-    console.log("════════════════════════════════════════════════════════════");
-    console.log("");
+    console.log(`\n${line}`);
+    console.log(`🚀  Server    : http://localhost:${PORT}`);
+    console.log(`📦  Env       : ${process.env.NODE_ENV || "development"}`);
+    console.log(`📧  SMTP host : ${process.env.SMTP_HOST ?? "NOT SET"} port ${process.env.SMTP_PORT || 587}`);
+    console.log(`📬  Recipient : ${RECIPIENT_EMAIL}`);
+    console.log(`${line}\n`);
   });
 }
 

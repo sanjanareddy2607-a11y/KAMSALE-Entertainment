@@ -6,7 +6,7 @@ import {
   Building2,
   Palette,
 } from "lucide-react";
-import { SERVICES } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { SectionHeading } from "./ui/SectionHeading";
 
 const iconMap = {
@@ -18,6 +18,8 @@ const iconMap = {
 } as const;
 
 export function Services() {
+  const { content } = useContent();
+
   return (
     <section
       id="services"
@@ -26,13 +28,13 @@ export function Services() {
     >
       <div className="mx-auto max-w-7xl px-5 md:px-8">
         <SectionHeading
-          title="Our Services"
-          subtitle="From custom rituals to event entertainment, we provide end-to-end cultural performance solutions for your wedding, reception, temple event or festival."
+          title={content.services.title}
+          subtitle={content.services.subtitle}
         />
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-6 gap-6 md:gap-8">
-          {SERVICES.map((service, index) => {
-            const Icon = iconMap[service.icon];
+          {content.services.items.map((service, index) => {
+            const Icon = iconMap[service.icon as keyof typeof iconMap];
             const colSpan = index < 3 ? "sm:col-span-1 lg:col-span-2" : "sm:col-span-1 lg:col-span-3";
             return (
               <motion.article

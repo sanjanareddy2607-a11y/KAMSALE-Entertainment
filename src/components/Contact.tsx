@@ -8,7 +8,7 @@ import {
   Send,
   CheckCircle2,
 } from "lucide-react";
-import { CONTACT, SITE } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { SectionHeading } from "./ui/SectionHeading";
 import { VenueAutocomplete } from "./VenueAutocomplete";
 import { openWhatsAppBooking, type BookingFormData } from "../utils/whatsapp";
@@ -19,6 +19,14 @@ interface FormErrors {
   eventDate?: string;
   venue?: string;
 }
+
+type ContactErrorMessages = {
+  name: string;
+  phone: string;
+  phoneInvalid: string;
+  eventDate: string;
+  venue: string;
+};
 
 function FloatingInput({
   id,
@@ -50,21 +58,23 @@ function FloatingInput({
           placeholder={type === "date" ? undefined : " "}
           min={min}
           aria-invalid={!!error}
-          className={`peer w-full rounded-xl border bg-white px-4 text-charcoal transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gold-400/40 ${
-            type === "date" ? "pt-7 pb-2" : "pt-6 pb-2"
-          } placeholder-shown:pt-6 placeholder-shown:pb-2 ${
-            error
+          className={
+            "peer w-full rounded-xl border bg-white px-4 text-charcoal transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-gold-400/40 " +
+            (type === "date" ? "pt-7 pb-2 " : "pt-6 pb-2 ") +
+            "placeholder-shown:pt-6 placeholder-shown:pb-2 " +
+            (error
               ? "border-red-400 focus:border-red-400"
-              : "border-gold-200/80 focus:border-gold-400"
-          }`}
+              : "border-gold-200/80 focus:border-gold-400")
+          }
         />
         <label
           htmlFor={id}
-          className={`absolute left-4 transition-all duration-300 pointer-events-none ${
-            type === "date" || hasValue
+          className={
+            "absolute left-4 transition-all duration-300 pointer-events-none " +
+            (type === "date" || hasValue
               ? "top-2 text-xs text-gold-600 font-medium"
-              : "top-1/2 -translate-y-1/2 text-warm-gray peer-focus:top-2 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-gold-600 peer-focus:font-medium"
-          }`}
+              : "top-1/2 -translate-y-1/2 text-warm-gray peer-focus:top-2 peer-focus:translate-y-0 peer-focus:text-xs peer-focus:text-gold-600 peer-focus:font-medium")
+          }
         >
           {label}
         </label>
@@ -78,22 +88,22 @@ function FloatingInput({
   );
 }
 
-function validateForm(data: BookingFormData): FormErrors {
+function validateForm(data: BookingFormData, e: ContactErrorMessages): FormErrors {
   const errors: FormErrors = {};
-
-  if (!data.name.trim()) errors.name = "Please enter your name";
+  if (!data.name.trim()) errors.name = e.name;
   if (!data.phone.trim()) {
-    errors.phone = "Please enter your phone number";
+    errors.phone = e.phone;
   } else if (!/^[+\d\s-]{10,15}$/.test(data.phone.trim())) {
-    errors.phone = "Please enter a valid phone number";
+    errors.phone = e.phoneInvalid;
   }
-  if (!data.eventDate) errors.eventDate = "Please select an event date";
-  if (!data.venue.trim()) errors.venue = "Please enter venue or city";
-
+  if (!data.eventDate) errors.eventDate = e.eventDate;
+  if (!data.venue.trim()) errors.venue = e.venue;
   return errors;
 }
 
 export function Contact() {
+  const { content } = useContent();
+
   const [form, setForm] = useState<BookingFormData>({
     name: "",
     phone: "",
@@ -113,20 +123,21 @@ export function Contact() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const validationErrors = validateForm(form);
-
+    const validationErrors = validateForm(form, content.contact.errors);
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
       return;
     }
-
     setSubmitted(true);
     openWhatsAppBooking(form);
-
     setTimeout(() => setSubmitted(false), 4000);
   };
 
   const today = new Date().toISOString().split("T")[0];
+
+  const mailtoHref = "mailto:" + content.site.email;
+  const telHref = "tel:" + content.site.phone.replace(/\s/g, "");
+  const waHref = "https://wa.me/" + content.site.phoneRaw;
 
   return (
     <section
@@ -136,8 +147,8 @@ export function Contact() {
     >
       <div className="mx-auto max-w-7xl px-5 md:px-8">
         <SectionHeading
-          title={CONTACT.title}
-          subtitle={CONTACT.subtitle}
+          title={content.contact.title}
+          subtitle={content.contact.subtitle}
           headingId="contact-heading"
         />
 
@@ -150,7 +161,7 @@ export function Contact() {
             className="lg:col-span-2"
           >
             <h3 className="font-display text-2xl md:text-3xl font-semibold text-charcoal mb-8">
-              Contact Details
+              {content.contact.details}
             </h3>
 
             <ul className="space-y-6">
@@ -159,9 +170,9 @@ export function Contact() {
                   <MapPin size={20} aria-hidden="true" />
                 </span>
                 <div>
-                  <p className="font-medium text-charcoal">Location</p>
-                  <p className="text-warm-gray mt-0.5">{SITE.location}</p>
-                  <p className="text-sm text-gold-600 mt-1">{SITE.availability}</p>
+                  <p className="font-medium text-charcoal">{content.contact.locationLabel}</p>
+                  <p className="text-warm-gray mt-0.5">{content.site.location}</p>
+                  <p className="text-sm text-gold-600 mt-1">{content.site.availability}</p>
                 </div>
               </li>
 
@@ -170,12 +181,12 @@ export function Contact() {
                   <Mail size={20} aria-hidden="true" />
                 </span>
                 <div>
-                  <p className="font-medium text-charcoal">Email</p>
+                  <p className="font-medium text-charcoal">{content.contact.emailLabel}</p>
                   <a
-                    href={`mailto:${SITE.email}`}
+                    href={mailtoHref}
                     className="text-warm-gray hover:text-gold-600 transition-colors mt-0.5 inline-block"
                   >
-                    {SITE.email}
+                    {content.site.email}
                   </a>
                 </div>
               </li>
@@ -185,12 +196,12 @@ export function Contact() {
                   <Phone size={20} aria-hidden="true" />
                 </span>
                 <div>
-                  <p className="font-medium text-charcoal">Phone</p>
+                  <p className="font-medium text-charcoal">{content.contact.phoneLabel}</p>
                   <a
-                    href={`tel:${SITE.phone.replace(/\s/g, "")}`}
+                    href={telHref}
                     className="text-warm-gray hover:text-gold-600 transition-colors mt-0.5 inline-block"
                   >
-                    {SITE.phone}
+                    {content.site.phone}
                   </a>
                 </div>
               </li>
@@ -200,14 +211,14 @@ export function Contact() {
                   <MessageCircle size={20} aria-hidden="true" />
                 </span>
                 <div>
-                  <p className="font-medium text-charcoal">WhatsApp</p>
+                  <p className="font-medium text-charcoal">{content.contact.whatsappLabel}</p>
                   <a
-                    href={`https://wa.me/${SITE.phoneRaw}`}
+                    href={waHref}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 mt-1 text-[#25D366] font-medium hover:underline"
                   >
-                    Chat now
+                    {content.contact.chatNow}
                   </a>
                 </div>
               </li>
@@ -227,20 +238,20 @@ export function Contact() {
               noValidate
             >
               <p className="text-warm-gray mb-8 leading-relaxed">
-                {CONTACT.formHint}
+                {content.contact.formHint}
               </p>
 
               <div className="grid sm:grid-cols-2 gap-5 md:gap-6">
                 <FloatingInput
                   id="booking-name"
-                  label="Name"
+                  label={content.contact.name}
                   value={form.name}
                   onChange={(v) => update("name", v)}
                   error={errors.name}
                 />
                 <FloatingInput
                   id="booking-phone"
-                  label="Phone Number"
+                  label={content.contact.phoneNumber}
                   type="tel"
                   value={form.phone}
                   onChange={(v) => update("phone", v)}
@@ -248,7 +259,7 @@ export function Contact() {
                 />
                 <FloatingInput
                   id="booking-date"
-                  label="Event Date"
+                  label={content.contact.eventDate}
                   type="date"
                   value={form.eventDate}
                   onChange={(v) => update("eventDate", v)}
@@ -274,13 +285,14 @@ export function Contact() {
                   />
                   <label
                     htmlFor="booking-notes"
-                    className={`absolute left-4 transition-all duration-300 pointer-events-none ${
-                      form.notes.trim()
+                    className={
+                      "absolute left-4 transition-all duration-300 pointer-events-none " +
+                      (form.notes.trim()
                         ? "top-2 text-xs text-gold-600 font-medium"
-                        : "top-4 text-warm-gray"
-                    }`}
+                        : "top-4 text-warm-gray")
+                    }
                   >
-                    Additional Notes
+                    {content.contact.additionalNotes}
                   </label>
                 </div>
               </div>
@@ -291,7 +303,7 @@ export function Contact() {
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-3 rounded-full bg-[#25D366] px-8 py-4 text-white font-semibold transition-all duration-300 hover:bg-[#1fb855] hover:shadow-lg hover:shadow-[#25D366]/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#25D366] disabled:opacity-70"
                 >
                   <Send size={18} aria-hidden="true" />
-                  Send Booking Request
+                  {content.contact.sendRequest}
                 </button>
 
                 <AnimatePresence>
@@ -304,7 +316,7 @@ export function Contact() {
                       role="status"
                     >
                       <CheckCircle2 size={20} aria-hidden="true" />
-                      Opening WhatsApp with your booking details...
+                      {content.contact.openingWhatsApp}
                     </motion.div>
                   )}
                 </AnimatePresence>

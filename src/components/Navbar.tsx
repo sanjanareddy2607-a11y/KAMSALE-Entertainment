@@ -3,9 +3,8 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
 
-import { NAV_ITEMS, SITE } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { useScrollSpy } from "../hooks/useScrollSpy";
-import { useLanguage } from "../context/LanguageContext";
 
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
@@ -14,10 +13,10 @@ export function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const { lang, toggleLanguage, t } = useLanguage();
+  const { lang, toggleLanguage, content } = useContent();
 
   const isHome = location.pathname === "/";
-  const activeId = useScrollSpy(NAV_ITEMS.map((item) => item.id));
+  const activeId = useScrollSpy(content.navItems.map((item) => item.id));
 
   useEffect(() => {
     const onScroll = () => {
@@ -104,18 +103,18 @@ export function Navbar() {
 
           <div className="text-left">
             <span className="font-display text-lg md:text-xl font-semibold text-charcoal leading-tight block">
-              {SITE.name}
+              {content.site.name}
             </span>
 
             <span className="text-[9px] md:text-[10px] text-gold-600 tracking-[0.18em] uppercase hidden sm:block font-medium">
-              {SITE.tagline}
+              {content.site.tagline}
             </span>
           </div>
         </Link>
 
         {/* Desktop Navigation */}
         <ul className="hidden lg:flex items-center gap-0.5 xl:gap-1">
-          {NAV_ITEMS.map((item) => (
+          {content.navItems.map((item) => (
             <li key={item.id}>
               <button
                 type="button"
@@ -128,7 +127,7 @@ export function Navbar() {
                     : "text-white/80 hover:text-white"
                 }`}
               >
-                {t(`nav.${item.id}` as any) || item.label}
+                {item.label}
 
                 {isHome && activeId === item.id && (
                   <motion.span
@@ -158,7 +157,7 @@ export function Navbar() {
                 : "bg-white text-charcoal hover:bg-gold-100 hover:shadow-xl"
             }`}
           >
-            {t("nav.bookEvent")}
+            {content.bookEvent}
           </button>
 
           {/* Language Toggle */}
@@ -203,7 +202,7 @@ export function Navbar() {
             className="lg:hidden glass-nav border-t border-gold-100/50 overflow-hidden"
           >
             <ul className="flex flex-col px-5 py-4 gap-1">
-              {NAV_ITEMS.map((item) => (
+              {content.navItems.map((item) => (
                 <li key={item.id}>
                   <button
                     type="button"
@@ -214,7 +213,7 @@ export function Navbar() {
                         : "text-charcoal hover:bg-cream"
                     }`}
                   >
-                    {t(`nav.${item.id}` as any) || item.label}
+                    {item.label}
                   </button>
                 </li>
               ))}
@@ -226,7 +225,7 @@ export function Navbar() {
                   onClick={() => scrollTo("contact")}
                   className="w-full rounded-xl bg-charcoal px-4 py-3 text-white font-medium hover:bg-gold-600 transition-colors"
                 >
-                  {t("nav.bookEvent")}
+                  {content.bookEvent}
                 </button>
               </li>
             </ul>

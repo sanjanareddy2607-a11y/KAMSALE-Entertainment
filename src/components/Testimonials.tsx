@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
 import { Star, Quote } from "lucide-react";
-import { TESTIMONIALS } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { SectionHeading } from "./ui/SectionHeading";
 
 export function Testimonials() {
+  const { content } = useContent();
+
   return (
     <section
       className="py-20 md:py-28 bg-gradient-to-b from-white to-cream"
@@ -11,15 +13,15 @@ export function Testimonials() {
     >
       <div className="mx-auto max-w-7xl px-5 md:px-8">
         <SectionHeading
-          title="Client Testimonials"
-          subtitle="Trusted by families and event planners for authentic performances, seamless service, and memorable cultural moments."
+          title={content.testimonials.title}
+          subtitle={content.testimonials.subtitle}
         />
 
         <div
           id="testimonials-heading"
           className="grid sm:grid-cols-2 gap-6 md:gap-8"
         >
-          {TESTIMONIALS.map((testimonial, index) => (
+          {content.testimonials.items.map((testimonial, index) => (
             <motion.article
               key={testimonial.author}
               initial={{ opacity: 0, y: 32 }}

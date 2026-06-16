@@ -1,13 +1,15 @@
 import { motion } from "framer-motion";
 import { Check } from "lucide-react";
-import { ABOUT } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { SectionHeading } from "./ui/SectionHeading";
 
 export function About() {
+  const { content } = useContent();
+
   return (
     <section id="about" className="py-20 md:py-28 bg-white" aria-labelledby="about-heading">
       <div className="mx-auto max-w-7xl px-5 md:px-8">
-        <SectionHeading title={ABOUT.title} />
+        <SectionHeading title={content.about.title} />
 
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           <motion.div
@@ -57,15 +59,15 @@ export function About() {
               id="about-heading"
               className="font-display text-3xl md:text-4xl font-semibold text-charcoal leading-snug mb-6"
             >
-              Preserving Karnataka&apos;s Living Tradition
+              {content.about.heading}
             </h3>
 
             <p className="text-warm-gray text-lg leading-relaxed mb-8">
-              {ABOUT.description}
+              {content.about.description}
             </p>
 
             <ul className="space-y-4">
-              {ABOUT.highlights.map((item, i) => (
+              {content.about.highlights.map((item, i) => (
                 <motion.li
                   key={item}
                   initial={{ opacity: 0, x: 20 }}
@@ -84,7 +86,7 @@ export function About() {
 
             <div className="mt-10 pt-8 border-t border-gold-100">
               <p className="font-display text-2xl italic text-gold-600">
-                &ldquo;Culture is not just performed — it is felt.&rdquo;
+                &ldquo;{content.about.quote}&rdquo;
               </p>
             </div>
           </motion.div>

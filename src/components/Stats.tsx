@@ -1,7 +1,7 @@
 import { motion, useInView } from "framer-motion";
 import { useRef } from "react";
 import { Calendar, Heart, Award, Star } from "lucide-react";
-import { STATS } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { AnimatedCounter } from "./ui/AnimatedCounter";
 
 const iconMap = {
@@ -12,6 +12,7 @@ const iconMap = {
 } as const;
 
 export function Stats() {
+  const { content } = useContent();
   const ref = useRef<HTMLDivElement>(null);
   const isInView = useInView(ref, { once: true, amount: 0.3 });
 
@@ -19,8 +20,8 @@ export function Stats() {
     <section className="relative py-16 md:py-20 bg-cream" aria-label="Statistics">
       <div className="mx-auto max-w-7xl px-5 md:px-8">
         <div ref={ref} className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-          {STATS.map((stat, index) => {
-            const Icon = iconMap[stat.icon];
+          {content.stats.map((stat, index) => {
+            const Icon = iconMap[stat.icon as keyof typeof iconMap];
             return (
               <motion.article
                 key={stat.label}

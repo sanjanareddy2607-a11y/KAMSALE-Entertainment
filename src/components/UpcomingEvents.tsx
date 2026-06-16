@@ -1,11 +1,12 @@
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Calendar, Sparkles, ArrowRight, Users } from "lucide-react";
-import { UPCOMING_EVENTS } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { SectionHeading } from "./ui/SectionHeading";
 
 export function UpcomingEvents() {
-  const { featured } = UPCOMING_EVENTS;
+  const { content } = useContent();
+  const { featured } = content.upcomingEvents;
 
   return (
     <section
@@ -15,8 +16,8 @@ export function UpcomingEvents() {
     >
       <div className="mx-auto max-w-7xl px-5 md:px-8">
         <SectionHeading
-          title={UPCOMING_EVENTS.title}
-          subtitle={UPCOMING_EVENTS.subtitle}
+          title={content.upcomingEvents.title}
+          subtitle={content.upcomingEvents.subtitle}
           headingId="events-heading"
         />
 
@@ -36,11 +37,11 @@ export function UpcomingEvents() {
             <div className="flex flex-wrap items-center gap-3 mb-6">
               <span className="inline-flex items-center gap-2 rounded-full bg-gold-50 border border-gold-200/60 px-4 py-1.5 text-xs font-medium tracking-wider uppercase text-gold-700">
                 <Sparkles size={14} aria-hidden="true" />
-                Featured Event
+                {content.upcomingEvents.featuredBadge}
               </span>
               <span className="inline-flex items-center gap-2 rounded-full bg-cream border border-gold-100 px-4 py-1.5 text-xs font-medium text-warm-gray">
                 <Calendar size={14} aria-hidden="true" />
-                Online Auditions Open
+                {content.upcomingEvents.auditionsBadge}
               </span>
             </div>
 
