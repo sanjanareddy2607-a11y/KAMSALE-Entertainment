@@ -2,12 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import { ChevronDown, CheckCircle2, ArrowLeft } from "lucide-react";
-import { UPCOMING_EVENTS } from "../data/content";
-import {
-  VINOOTANA_FAQ,
-  ELIGIBILITY_POINTS,
-  AUDITION_PROCESS,
-} from "../data/vinootana";
+import { useContent } from "../context/LanguageContext";
 import { RegistrationWizard } from "../registration/RegistrationWizard";
 
 function FaqItem({
@@ -48,7 +43,9 @@ function FaqItem({
 }
 
 export function RegisterVinootanaPage() {
-  const { featured } = UPCOMING_EVENTS;
+  const { content } = useContent();
+  const { featured } = content.upcomingEvents;
+  const page = content.registrationPage;
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   return (
@@ -72,7 +69,7 @@ export function RegisterVinootanaPage() {
             className="inline-flex items-center gap-2 text-sm text-warm-gray hover:text-gold-600 transition-colors mb-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500 rounded-lg"
           >
             <ArrowLeft size={16} aria-hidden="true" />
-            Back to Home
+            {page.backToHome}
           </Link>
 
           <motion.div
@@ -82,7 +79,7 @@ export function RegisterVinootanaPage() {
             className="max-w-3xl"
           >
             <span className="inline-block mb-4 px-4 py-1.5 rounded-full bg-gold-50 border border-gold-200/60 text-xs font-medium tracking-wider uppercase text-gold-700">
-              Online Auditions
+              {page.onlineAuditionsBadge}
             </span>
             <h1
               id="register-hero-heading"
@@ -106,14 +103,11 @@ export function RegisterVinootanaPage() {
             id="overview-heading"
             className="font-display text-3xl md:text-4xl font-semibold text-charcoal mb-8"
           >
-            Event Overview
+            {page.overview.heading}
           </h2>
           <div className="grid md:grid-cols-2 gap-8">
             <p className="text-warm-gray leading-relaxed text-lg">
-              Vinootana Golden Singers celebrates talent, confidence, and creativity
-              across Karnataka. This initiative creates meaningful opportunities for
-              specially-abled performers to grow, shine, and connect with future
-              events through Kamasale Entertainment.
+              {page.overview.description}
             </p>
             <ul className="space-y-3">
               {featured.highlights.map((item) => (
@@ -143,10 +137,10 @@ export function RegisterVinootanaPage() {
             id="eligibility-heading"
             className="font-display text-3xl md:text-4xl font-semibold text-charcoal mb-8"
           >
-            Eligibility Information
+            {page.eligibility.heading}
           </h2>
           <ul className="grid sm:grid-cols-2 gap-4 max-w-4xl">
-            {ELIGIBILITY_POINTS.map((point) => (
+            {page.eligibility.points.map((point) => (
               <li
                 key={point}
                 className="flex items-start gap-3 rounded-2xl bg-white p-5 card-border"
@@ -172,10 +166,10 @@ export function RegisterVinootanaPage() {
             id="process-heading"
             className="font-display text-3xl md:text-4xl font-semibold text-charcoal mb-10"
           >
-            Online Audition Process
+            {page.process.heading}
           </h2>
           <ol className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            {AUDITION_PROCESS.map((item) => (
+            {page.process.steps.map((item) => (
               <li
                 key={item.step}
                 className="rounded-3xl bg-cream p-6 md:p-8 card-border premium-shadow hover:glow-gold transition-all duration-500"
@@ -201,10 +195,10 @@ export function RegisterVinootanaPage() {
             id="faq-heading"
             className="font-display text-3xl md:text-4xl font-semibold text-charcoal mb-8 text-center"
           >
-            Frequently Asked Questions
+            {page.faq.heading}
           </h2>
           <div className="space-y-3">
-            {VINOOTANA_FAQ.map((item, index) => (
+            {page.faq.items.map((item, index) => (
               <FaqItem
                 key={item.question}
                 question={item.question}
@@ -230,11 +224,10 @@ export function RegisterVinootanaPage() {
               id="form-heading"
               className="font-display text-3xl md:text-4xl font-semibold text-charcoal"
             >
-              Registration Form
+              {page.form.heading}
             </h2>
             <p className="mt-4 text-warm-gray max-w-xl mx-auto">
-              Complete all steps to register for Vinootana Golden Singers online
-              auditions.
+              {page.form.subtitle}
             </p>
           </div>
           <RegistrationWizard />

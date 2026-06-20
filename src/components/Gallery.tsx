@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, X, Maximize2 } from "lucide-react";
-import { GALLERY } from "../data/content";
+import { useContent } from "../context/LanguageContext";
 import { SectionHeading } from "./ui/SectionHeading";
 
 const SLIDE_INTERVAL = 3000;
@@ -17,6 +17,8 @@ function getReducedMotion() {
 }
 
 export function Gallery() {
+  const { content } = useContent();
+  const gallery = content.gallery;
   const [current, setCurrent] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -25,7 +27,7 @@ export function Gallery() {
     getReducedMotion,
     () => false
   );
-  const total = GALLERY.images.length;
+  const total = gallery.images.length;
 
   const goTo = useCallback(
     (index: number) => {
@@ -65,7 +67,7 @@ export function Gallery() {
       aria-labelledby="gallery-heading"
     >
       <div className="mx-auto max-w-7xl px-5 md:px-8">
-        <SectionHeading title={GALLERY.title} subtitle={GALLERY.description} headingId="gallery-heading" />
+        <SectionHeading title={gallery.title} subtitle={gallery.description} headingId="gallery-heading" />
 
         <div
           className="relative max-w-5xl mx-auto"
@@ -81,7 +83,7 @@ export function Gallery() {
               <AnimatePresence mode="wait">
                 <motion.img
                   key={current}
-                  src={GALLERY.images[current]}
+                  src={gallery.images[current]}
                   alt={`Kamsale performance showcase ${current + 1} of ${total}`}
                   initial={{ opacity: 0, scale: 1.04 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -129,7 +131,7 @@ export function Gallery() {
             role="tablist"
             aria-label="Gallery navigation"
           >
-            {GALLERY.images.map((_, index) => (
+            {gallery.images.map((_, index) => (
               <button
                 key={index}
                 type="button"
@@ -187,7 +189,7 @@ export function Gallery() {
 
             <motion.img
               key={`lightbox-${current}`}
-              src={GALLERY.images[current]}
+              src={gallery.images[current]}
               alt={`Kamsale performance ${current + 1}`}
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}

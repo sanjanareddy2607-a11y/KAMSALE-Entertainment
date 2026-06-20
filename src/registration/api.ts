@@ -3,7 +3,7 @@ import type { RegistrationFormData } from "./types";
 export async function submitRegistration(
   data: RegistrationFormData,
   eventSlug: string
-): Promise<{ success: boolean; id?: number; error?: string }> {
+): Promise<{ success: boolean; id?: number; error?: string; duplicate?: boolean }> {
   const formData = new FormData();
 
   formData.append("eventSlug", eventSlug);
@@ -68,7 +68,11 @@ export async function submitRegistration(
     const result = await response.json();
 
     if (!response.ok) {
-      return { success: false, error: result.error ?? "Submission failed" };
+      return {
+        success: false,
+        error: result.error ?? "Submission failed",
+        duplicate: Boolean(result.duplicate),
+      };
     }
 
     return { success: true, id: result.id };

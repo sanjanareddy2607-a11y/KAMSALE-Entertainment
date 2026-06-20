@@ -8,7 +8,6 @@ import {
   FormSelect,
   FormTextarea,
   FormRadioGroup,
-  FormFileUpload,
   FormCheckboxGroup,
 } from "../components/ui/FormFields";
 import { DistrictAutocomplete } from "../components/ui/DistrictAutocomplete";
@@ -376,6 +375,7 @@ export function RegistrationWizard() {
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [isDuplicateError, setIsDuplicateError] = useState(false);
 
   const update = <K extends keyof RegistrationFormData>(
     key: K,
@@ -440,6 +440,7 @@ const goNext = () => {
 
     setSubmitting(true);
     setSubmitError("");
+    setIsDuplicateError(false);
 
     const result = await submitRegistration(
       data,
@@ -449,9 +450,12 @@ const goNext = () => {
     setSubmitting(false);
 
     if (result.success) {
-      navigate("/register/vinootana-golden-singers/success");
+      navigate("/register/vinootana-golden-singers/success", {
+        state: { registrationId: result.id },
+      });
     } else {
       setSubmitError(result.error ?? "Submission failed. Please try again.");
+      setIsDuplicateError(Boolean(result.duplicate));
     }
   };
 
@@ -573,18 +577,6 @@ const goNext = () => {
               error={errors.participantGender}
               required
             />
-            <div className="sm:col-span-2">
-              <FormFileUpload
-                id="participant-photo"
-                label="Participant Photograph"
-                accept="image/jpeg,image/png,image/webp"
-                file={data.participantPhoto}
-                onChange={(f) => update("participantPhoto", f)}
-                error={errors.participantPhoto}
-                required
-                hint="Accepted formats: JPG, PNG, WEBP"
-              />
-            </div>
           </div>
         );
 
@@ -720,24 +712,53 @@ const goNext = () => {
       case 5:
         return (
           <div className="space-y-6">
-            <FormFileUpload
-              id="audition-file"
-              label="Audition Performance File"
-              accept=".mp3,.wav,.mp4,.mov,audio/mpeg,audio/wav,video/mp4,video/quicktime"
-              file={data.auditionFile}
-              onChange={(f) => update("auditionFile", f)}
-              error={errors.auditionFile}
-              required
-              hint="Supported formats: MP3, WAV, MP4, MOV. Upload your singing, dance, acting, or performance recording."
-            />
-            <FormFileUpload
-              id="portfolio-file"
-              label="Additional Portfolio Documents (Optional)"
-              accept=".pdf,.doc,.docx,.zip,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip"
-              file={data.portfolioFile}
-              onChange={(f) => update("portfolioFile", f)}
-              hint="Supported formats: PDF, DOC, DOCX, ZIP"
-            />
+            <div className="rounded-2xl bg-gold-50/60 border border-gold-100 p-6 md:p-8 space-y-5">
+              <div>
+                <h3 className="font-display text-xl font-semibold text-charcoal mb-2">
+                  Upload Your Files via Google Form
+                </h3>
+                <p className="text-sm text-warm-gray leading-relaxed">
+                  To make it easy to submit your photo and audition
+                  recording without worrying about file size limits, we
+                  collect these through a short Google Form instead of
+                  here. It accepts large photos, audio, and video files
+                  directly — no compression or Google Drive link needed.
+                </p>
+              </div>
+
+              <div className="rounded-xl bg-white border border-gold-100 p-5 space-y-2">
+                <p className="text-sm font-medium text-charcoal">
+                  In the Google Form, please upload:
+                </p>
+                <ul className="text-sm text-warm-gray space-y-1.5 list-disc list-inside">
+                  <li>Your participant photograph (JPG, PNG, or WEBP)</li>
+                  <li>Your audition performance file (MP3, WAV, MP4, or MOV)</li>
+                </ul>
+              </div>
+
+              <p className="text-sm text-warm-gray leading-relaxed">
+                <span className="font-medium text-charcoal">
+                  Please finish and submit this registration first.
+                </span>{" "}
+                Once submitted, you'll receive a unique Registration ID on
+                the confirmation page — enter that ID in the Google Form so
+                we can match your uploaded files to this exact application.
+              </p>
+
+              <a
+                href="https://docs.google.com/forms/d/e/1FAIpQLSdPZnLIfem8zXfZQhbPYGx_kHqrT7dQRPoCwUqcL4iGkS9-9w/viewform?usp=dialog"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-charcoal px-6 py-3 text-sm font-semibold text-white transition-all duration-300 hover:bg-gold-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500"
+              >
+                Open Google Form (use after submitting)
+              </a>
+
+              <p className="text-xs text-warm-gray/80">
+                You don't need to upload anything here — just continue to
+                the next step and finish your registration.
+              </p>
+            </div>
           </div>
         );
 
@@ -864,16 +885,23 @@ const goNext = () => {
                   value={data.performanceLevel}
                 />
                 <ReviewRow
-                  label="Audition File"
-                  value={data.auditionFile?.name ?? ""}
+                  label="Photo / Audition"
+                  value="Submitted via Google Form"
                 />
               </dl>
             </div>
 
             {submitError && (
-              <p className="text-sm text-red-500" role="alert">
+              <div
+                className={`rounded-2xl p-4 text-sm ${
+                  isDuplicateError
+                    ? "bg-amber-50 border border-amber-200 text-amber-800"
+                    : "text-red-500"
+                }`}
+                role="alert"
+              >
                 {submitError}
-              </p>
+              </div>
             )}
           </div>
         );

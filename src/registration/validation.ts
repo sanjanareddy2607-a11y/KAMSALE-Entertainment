@@ -53,8 +53,6 @@ export function validateStep(
         errors.participantAge = "Please enter a valid age";
       }
       if (!data.participantGender) errors.participantGender = "Gender is required";
-      if (!data.participantPhoto)
-        errors.participantPhoto = "Participant photograph is required";
       break;
 
     case 3:
@@ -77,14 +75,9 @@ export function validateStep(
       break;
 
     case 5:
-      if (!data.auditionFile) {
-        errors.auditionFile = "Audition performance file is required";
-      } else if (data.auditionFile.size > 100 * 1024 * 1024) {
-        errors.auditionFile = "File must be under 100 MB";
-      }
-      if (data.portfolioFile && data.portfolioFile.size > 50 * 1024 * 1024) {
-        errors.portfolioFile = "Portfolio file must be under 50 MB";
-      }
+      // Photo, audition file, and portfolio file are now collected via the
+      // external Google Form (see Step 5 UI) to avoid the in-app 25MB limit.
+      // Nothing to validate here anymore.
       break;
 
     case 6:

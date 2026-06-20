@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import { initDatabase, insertRegistration, searchRegistrations } from "./db.ts";
+import { initDatabase, insertRegistration, searchRegistrations, findRegistrationByGuardianContact } from "./db.ts";
 
 dotenv.config();
 
@@ -220,13 +220,64 @@ app.post(
         return;
       }
 
+      // ----------------------------------------------------------------
+      // DUPLICATE REGISTRATION CHECK
+      // Block a second registration from the same guardian mobile or
+      // email for this event. We check guardian contact info only (not
+      // participant info), since one guardian could legitimately be
+      // registering on behalf of only one participant under this event.
+      // ----------------------------------------------------------------
+      const eventSlug = body.eventSlug || "vinootana-golden-singers";
+      const existing = findRegistrationByGuardianContact(
+        body.guardianMobile,
+        body.guardianEmail || null,
+        eventSlug
+      );
+
+      if (existing) {
+        console.warn(
+          `⚠️  Duplicate registration blocked — mobile/email already used in Reg #${existing.id}`
+        );
+        res.status(409).json({
+          error:
+            "A registration with this mobile number or email already exists for this event. " +
+            "If you believe this is a mistake, please contact us directly at " +
+            `${RECIPIENT_EMAIL} with your details.`,
+          duplicate: true,
+        });
+        return;
+      }
+
       const filePaths = {
         participantPhoto: files.participantPhoto?.[0]?.filename ?? null,
         auditionFile:     files.auditionFile?.[0]?.filename     ?? null,
         portfolioFile:    files.portfolioFile?.[0]?.filename    ?? null,
       };
 
-      const id = insertRegistration(body, filePaths);
+      let id: number;
+      try {
+        id = insertRegistration(body, filePaths);
+      } catch (err) {
+        // Backstop for the rare race condition: two submissions with the
+        // same mobile/email both pass the check above at nearly the same
+        // instant, before either INSERT finishes. SQLite's unique index
+        // (see db.ts) rejects the second INSERT with a constraint error —
+        // we catch it here and respond the same way as a normal duplicate.
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes("UNIQUE constraint failed")) {
+          console.warn("⚠️  Duplicate registration blocked at database level (race condition).");
+          res.status(409).json({
+            error:
+              "A registration with this mobile number or email already exists for this event. " +
+              "If you believe this is a mistake, please contact us directly at " +
+              `${RECIPIENT_EMAIL} with your details.`,
+            duplicate: true,
+          });
+          return;
+        }
+        throw err; // not a duplicate issue — rethrow to outer catch block
+      }
+
       console.log(`✅ [Reg #${id}] Saved to SQLite`);
 
       const emailData = {

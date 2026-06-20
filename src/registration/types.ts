@@ -177,6 +177,6 @@ export const REGISTRATION_STEPS = [
   { id: 2, label: "Participant Information" },
   { id: 3, label: "Special Ability Information" },
   { id: 4, label: "Talent Profile" },
-  { id: 5, label: "Audition Submission" },
+  { id: 5, label: "Photo & Audition Upload" },
   { id: 6, label: "Review & Submit" },
 ] as const;

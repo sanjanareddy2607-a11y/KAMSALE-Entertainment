@@ -76,6 +76,66 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_registrations_travel ON registrations(travel_comfort);
     CREATE INDEX IF NOT EXISTS idx_registrations_event ON registrations(event_slug);
   `);
+
+  // Hard safety net against race conditions: even if two submissions arrive
+  // at the exact same moment and both pass the app-side duplicate check
+  // before either INSERT finishes, this unique index makes SQLite itself
+  // reject the second INSERT — so a true duplicate can never land in the
+  // table no matter what.
+  //
+  // Wrapped in try/catch because if your existing data already has
+  // duplicate guardian_mobile rows for the same event (from before this
+  // change), SQLite cannot build a unique index over violating data.
+  // In that case we log a warning instead of crashing the whole server.
+  try {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_registrations_unique_mobile
+        ON registrations(event_slug, guardian_mobile);
+    `);
+  } catch (err) {
+    console.warn(
+      "⚠️  Could not create unique mobile index — you likely have existing " +
+      "duplicate guardian_mobile rows for the same event. The app-side " +
+      "duplicate check in index.ts will still work, but run a cleanup " +
+      "query to remove old duplicates if you want the database-level " +
+      "guarantee too."
+    );
+    console.warn(`   Reason: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+export function findRegistrationByGuardianContact(
+  guardianMobile: string,
+  guardianEmail: string | null,
+  eventSlug: string
+): { id: number; guardian_mobile: string; guardian_email: string | null } | undefined {
+  // Normalize inputs the same way we'd want to compare them — trimmed,
+  // and email lowercased — so "User@Gmail.com" matches "user@gmail.com".
+  const mobile = guardianMobile.trim();
+  const email = guardianEmail?.trim().toLowerCase() || null;
+
+  if (email) {
+    return db
+      .prepare(
+        `SELECT id, guardian_mobile, guardian_email FROM registrations
+         WHERE event_slug = ?
+           AND (guardian_mobile = ? OR LOWER(guardian_email) = ?)
+         LIMIT 1`
+      )
+      .get(eventSlug, mobile, email) as
+      | { id: number; guardian_mobile: string; guardian_email: string | null }
+      | undefined;
+  }
+
+  return db
+    .prepare(
+      `SELECT id, guardian_mobile, guardian_email FROM registrations
+       WHERE event_slug = ? AND guardian_mobile = ?
+       LIMIT 1`
+    )
+    .get(eventSlug, mobile) as
+    | { id: number; guardian_mobile: string; guardian_email: string | null }
+    | undefined;
 }
 
 export function insertRegistration(

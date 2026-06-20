@@ -1,8 +1,39 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation, Navigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { CheckCircle2, Home } from "lucide-react";
+import { useState } from "react";
+import { CheckCircle2, Home, Copy, Check, ExternalLink } from "lucide-react";
+import { useContent } from "../context/LanguageContext";
+
+interface SuccessPageState {
+  registrationId?: number;
+}
 
 export function RegisterSuccessPage() {
+  const { content } = useContent();
+  const success = content.registrationPage.success;
+  const location = useLocation();
+  const state = location.state as SuccessPageState | null;
+  const registrationId = state?.registrationId;
+  const [copied, setCopied] = useState(false);
+
+  // If someone lands here directly (refresh, bookmark, back button) without
+  // having just submitted the form, there's no registrationId in state.
+  // Send them home instead of showing a confusing blank ID.
+  if (!registrationId) {
+    return <Navigate to="/" replace />;
+  }
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(String(registrationId));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard API can fail on some browsers/permissions; copy button
+      // simply won't show the "copied" state, no crash either way.
+    }
+  };
+
   return (
     <section className="min-h-[70vh] flex items-center justify-center py-24 md:py-32 bg-gradient-to-b from-cream to-white">
       <motion.div
@@ -16,32 +47,70 @@ export function RegisterSuccessPage() {
         </div>
 
         <h1 className="font-display text-3xl md:text-4xl lg:text-5xl font-semibold text-charcoal mb-6">
-          Thank You for Registering
+          {success.thankYouHeading}
         </h1>
 
         <div className="rounded-3xl bg-white p-8 md:p-10 card-border premium-shadow-lg text-left space-y-4">
-          <p className="text-warm-gray leading-relaxed">
-            Thank you for registering for Vinootana Golden Singers.
-          </p>
-          <p className="text-warm-gray leading-relaxed">
-            Your application has been successfully submitted.
-          </p>
-          <p className="text-warm-gray leading-relaxed">
-            Our team will review your profile and audition materials.
-          </p>
+          <p className="text-warm-gray leading-relaxed">{success.line1}</p>
+          <p className="text-warm-gray leading-relaxed">{success.line2}</p>
+
+          {/* Registration ID callout */}
+          <div className="rounded-2xl bg-gold-50/70 border border-gold-200 p-6 space-y-3">
+            <p className="text-sm font-medium text-charcoal">
+              {success.idLabel}
+            </p>
+            <div className="flex items-center gap-3">
+              <span className="font-display text-2xl md:text-3xl font-semibold text-gold-700">
+                #{registrationId}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopy}
+                aria-label="Copy registration ID"
+                className="inline-flex items-center gap-1.5 rounded-full border border-gold-200 bg-white px-3 py-1.5 text-xs font-medium text-charcoal transition-all duration-300 hover:bg-gold-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500"
+              >
+                {copied ? (
+                  <>
+                    <Check size={14} aria-hidden="true" />
+                    {success.copied}
+                  </>
+                ) : (
+                  <>
+                    <Copy size={14} aria-hidden="true" />
+                    {success.copy}
+                  </>
+                )}
+              </button>
+            </div>
+            <p className="text-sm text-warm-gray leading-relaxed">
+              {success.idHint}
+            </p>
+          </div>
+
+          <p className="text-warm-gray leading-relaxed">{success.line3}</p>
           <p className="text-charcoal font-medium leading-relaxed">
-            Selected participants will be contacted through the registered phone
-            number or email.
+            {success.line4}
           </p>
         </div>
 
-        <Link
-          to="/"
-          className="mt-10 inline-flex items-center justify-center gap-2 rounded-full bg-charcoal px-8 py-4 text-sm font-semibold text-white transition-all duration-300 hover:bg-gold-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500"
-        >
-          <Home size={18} aria-hidden="true" />
-          Return to Home
-        </Link>
+        <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+          <a
+            href="https://docs.google.com/forms/d/e/1FAIpQLSdPZnLIfem8zXfZQhbPYGx_kHqrT7dQRPoCwUqcL4iGkS9-9w/viewform?usp=dialog"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-full bg-charcoal px-8 py-4 text-sm font-semibold text-white transition-all duration-300 hover:bg-gold-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500"
+          >
+            <ExternalLink size={18} aria-hidden="true" />
+            {success.openFormButton}
+          </a>
+          <Link
+            to="/"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-gold-200 px-8 py-4 text-sm font-semibold text-charcoal transition-all duration-300 hover:bg-gold-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-500"
+          >
+            <Home size={18} aria-hidden="true" />
+            {success.homeButton}
+          </Link>
+        </div>
       </motion.div>
     </section>
   );
